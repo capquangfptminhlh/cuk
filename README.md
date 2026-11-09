@@ -100,3 +100,7 @@ Các test giả lập dữ liệu công khai, xác minh chống trùng, bảo to
 6. Chạy `npm test`, `npm run check`, `npm run build`; xem GitHub Actions.
 
 > **Chưa kết nối cuktech.vn / chưa triển khai server production** chỉ từ việc đẩy code lên GitHub.
+
+## Chạy bằng Docker trên VPS
+
+Xem [hướng dẫn triển khai](docs/DEPLOY.md) để dùng Compose, HTTPS reverse proxy, volume SQLite và quy trình bật nhận đơn an toàn.

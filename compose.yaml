@@ -1,0 +1,18 @@
+name: cuktech-vn
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - cuktech_data:/app/server/data
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  cuktech_data:
