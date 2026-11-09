@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { db, sha256, verifyPassword, newOrderId } from './db.js'
 import { runCatalogSync, isCatalogSyncRunning } from './catalog-sync.js'
+import { isDemoMode, isCheckoutEnabled, publicProduct, validateAdminProductUpdate } from './store-policy.js'
 
 const app = express()
 app.disable('x-powered-by')
@@ -27,10 +28,12 @@ function rateLimit(req,res,next) {
  if (item.count>12) return res.status(429).json({error:'Thử lại sau một phút'})
  next()
 }
-app.get('/api/config', (req,res) => res.json({ demo: process.env.STORE_DEMO !== '0', currency: 'VND', shopName: 'CUKTECH VN' }))
-app.get('/api/products', (req,res) => res.json(selectProducts.all()))
-app.get('/api/products/:slug', (req,res) => { const p=selectProduct.get(req.params.slug); p?res.json(p):res.status(404).json({error:'Không tìm thấy sản phẩm'}) })
+app.get('/api/config', (req,res) => res.json({ demo: isDemoMode(), checkoutEnabled: isCheckoutEnabled(), currency: 'VND', shopName: 'CUKTECH VN' }))
+app.get('/api/health', (_,res) => res.json({ ok: true }))
+app.get('/api/products', (req,res) => res.json(selectProducts.all().map(publicProduct)))
+app.get('/api/products/:slug', (req,res) => { const p=selectProduct.get(req.params.slug); p?res.json(publicProduct(p)):res.status(404).json({error:'Không tìm thấy sản phẩm'}) })
 app.post('/api/orders',rateLimit,(req,res)=>{
+ if (!isCheckoutEnabled()) return res.status(503).json({error:'Cửa hàng chưa mở nhận đơn thật. Vui lòng liên hệ quản trị viên.'})
  const {customer,phone,address,note='',items}=req.body || {}
  if (typeof customer!=='string'||customer.trim().length<2||customer.length>100 ||
      typeof phone!=='string'|| !/^(\+?84|0)\d{9}$/.test(phone.replace(/[ .-]/g,'')) ||
@@ -91,13 +94,15 @@ app.get('/api/admin/orders',requireAdmin,(_,res)=>res.json(db.prepare('SELECT * 
 app.patch('/api/admin/products/:id',requireAdmin,(req,res)=>{
  const p=db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id)
  if(!p)return res.status(404).json({error:'Không tìm thấy'})
- const allowed=['name','category','description','capacity','wattage','badge','art','slug','price','old_price','stock','featured','published']
+ const allowed=['name','category','description','capacity','wattage','badge','art','slug','price','old_price','stock','featured','published','media_approved']
  const fields=Object.entries(req.body||{}).filter(([key])=>allowed.includes(key))
  if(!fields.length)return res.status(400).json({error:'Không có dữ liệu'})
  for(const [key,value] of fields){
-  if(['price','old_price','stock','featured','published'].includes(key)){if(!Number.isInteger(value)||value<0||value>1e9)return res.status(400).json({error:`${key} không hợp lệ`})}
+  if(['price','old_price','stock','featured','published','media_approved'].includes(key)){if(!Number.isInteger(value)||value<0||value>1e9)return res.status(400).json({error:`${key} không hợp lệ`})}
   else if(typeof value!=='string'||value.length>1000)return res.status(400).json({error:`${key} không hợp lệ`})
  }
+ const problem=validateAdminProductUpdate(p,Object.fromEntries(fields))
+ if(problem) return res.status(400).json({error:problem})
  const keys=fields.map(([k])=>`${k}=?`).join(',')
  try{db.prepare(`UPDATE products SET ${keys} WHERE id=?`).run(...fields.map(([,v])=>v),p.id)}catch{return res.status(409).json({error:'Slug trùng'})}
  res.json(db.prepare('SELECT * FROM products WHERE id=?').get(p.id))

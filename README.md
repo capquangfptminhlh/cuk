@@ -6,7 +6,7 @@ Website thương mại điện tử **độc lập**, thiết kế theo nhịp b
 
 - React 19 + Vite: trang chủ, danh mục, lọc, tìm kiếm, chi tiết, giỏ hàng, thanh toán COD, xác nhận đơn, newsletter, trang thông tin.
 - Express + SQLite (`node:sqlite`): sản phẩm, đơn hàng, tồn kho trừ nguyên tử, tài khoản admin và phiên đăng nhập.
-- `/admin`: đăng nhập, cập nhật giá/tồn kho/thông tin sản phẩm, thêm sản phẩm, quản lý trạng thái đơn hàng.
+- `/admin`: đăng nhập, cập nhật giá/tồn kho/thông tin sản phẩm, thêm sản phẩm, quản lý trạng thái đơn hàng và quyền dùng ảnh nguồn. Danh mục phân trang; trang chi tiết có album ảnh sau khi duyệt quyền sử dụng.
 - Responsive, hình minh họa thiết bị tự dựng bằng CSS; **chưa** dùng ảnh thật hay nội dung được cấp phép từ chủ thương hiệu.
 
 ## Chạy trên máy
@@ -28,7 +28,7 @@ Trên Windows, sao chép `.env.example` sang `.env` thay vì `cp` nếu cần. `
 ```bash
 npm ci
 npm run build
-NODE_ENV=production PORT=3001 ADMIN_EMAIL='...' ADMIN_PASSWORD='...' STORE_DEMO=0 npm start
+NODE_ENV=production PORT=3001 ADMIN_EMAIL='...' ADMIN_PASSWORD='...' STORE_DEMO=0 STORE_READY=0 npm start
 ```
 
 Cấu hình reverse proxy HTTPS cho cuktech.vn về cổng 3001; không kết nối tên miền tự động. Dữ liệu SQLite nằm ở `server/data/store.sqlite` (phải mount volume lưu trữ). Back up DB định kỳ. Chỉ công khai khi đã thay giá demo, tồn kho, địa chỉ liên hệ, chính sách, thông tin pháp lý, thông tin đơn vị kinh doanh và ảnh được cấp quyền sử dụng. Nếu dùng môi trường serverless không có ổ đĩa bền vững, chuyển DB sang PostgreSQL.
@@ -40,6 +40,8 @@ Cấu hình reverse proxy HTTPS cho cuktech.vn về cổng 3001; không kết n�
 - Chưa tích hợp cổng thanh toán thật (mặc định chỉ COD), vận chuyển tự động, email/SMS xác nhận, quản lý nhiều admin hoặc đồng bộ kho ngoài. Cần hoàn thiện các phần này trước khi mở rộng kinh doanh thực tế.
 
 ### Dữ liệu mẫu
+
+Chỉ tạo dữ liệu demo lần đầu khi `STORE_DEMO` khác `0`. Production phải nhập sản phẩm thật (hoặc chạy sync và duyệt). Khi chuyển từ demo sang production trên cùng database, dữ liệu mẫu cũ vẫn tồn tại: kiểm tra và ẩn/xóa dữ liệu mẫu trước khi bán.
 
 Danh mục/tên model đối chiếu trang CUKTECH công khai, nhưng các mức **giá bán, tồn kho, mô tả minh họa trong code đều là dữ liệu demo**. Khi `STORE_DEMO=1`, giao diện hiện thông báo minh bạch. Không tự nhận hàng chính hãng hoặc chính sách bảo hành cụ thể khi chưa xác thực.
 
@@ -76,7 +78,7 @@ CATALOG_SYNC_HOURS=12
 
 Mặc định tính năng lịch tự động **tắt** để chủ website xác minh điều khoản sử dụng/giấy phép hình ảnh trước. GitHub Actions chỉ build và chạy test; việc lên lịch không cập nhật một cơ sở dữ liệu SQLite nằm trên server đang chạy nếu chưa có kết nối tới server.
 
-Để tránh nhập dữ liệu rác hoặc đăng bán nhầm, hãy bật `STORE_DEMO=0` chỉ sau khi cập nhật giá VND và tồn kho thật qua `/admin`.
+Để tránh nhập dữ liệu rác hoặc đăng bán nhầm, server **không nhận đơn** mặc định. Chỉ bật cả `STORE_DEMO=0` và `STORE_READY=1` sau khi đối soát giá VND, tồn kho thật, chính sách và quyền hình ảnh. Cấu hình chỉ một trong hai **không mở thanh toán**. Imported product có ảnh nguồn bắt buộc chọn **Đã có quyền sử dụng ảnh** trong `/admin` rồi mới được hiển thị. API public không trả ảnh nguồn chưa duyệt. Không được tự động kích hoạt production chỉ để chạy thử.
 
 ### Kiểm thử
 
@@ -87,3 +89,14 @@ npm run build
 ```
 
 Các test giả lập dữ liệu công khai, xác minh chống trùng, bảo toàn giá VND/tồn kho và tuân thủ robots.txt. Kiểm thử **không chứng minh** đã tải toàn bộ danh mục ở site nguồn: phải chạy trên máy chủ thật rồi đối chiếu số lượng xuất ra với danh mục công khai hiện tại.
+
+### Lộ trình kiểm tra trước vận hành thật
+
+1. Cấu hình domain + HTTPS và volume SQLite bền vững; chạy thử `/api/health` trả `ok`.
+2. Cấu hình `ADMIN_EMAIL`, `ADMIN_PASSWORD`, đăng nhập `/admin` kiểm tra quyền.
+3. Kiểm tra điều khoản website nguồn; chạy đồng bộ có trách nhiệm và đối soát số lượng theo nguồn. Nếu robots/HTTP 403/429 từ chối, dừng và xin nguồn dữ liệu được cấp phép.
+4. Duyệt nguồn ảnh, điền mô tả riêng, giá VND/tồn kho thật, kiểm tra mọi sản phẩm cần bán.
+5. Kiểm thử đặt hàng bằng dữ liệu không nhạy cảm trên môi trường staging riêng trước khi bật `STORE_READY=1`.
+6. Chạy `npm test`, `npm run check`, `npm run build`; xem GitHub Actions.
+
+> **Chưa kết nối cuktech.vn / chưa triển khai server production** chỉ từ việc đẩy code lên GitHub.
