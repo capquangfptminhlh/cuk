@@ -145,5 +145,5 @@ app.listen(port,()=>console.log(`CUKTECH VN running at :${port}`))
 if (process.env.CATALOG_SYNC_ENABLED === '1') {
  const startSync=()=>{ if (!isCatalogSyncRunning()) void runCatalogSync().catch(error=>console.error('[catalog-sync]',error.message)) }
  setTimeout(startSync,20_000).unref()
- setInterval(startSync,Math.max(60,Number(process.env.CATALOG_SYNC_HOURS||12))*60*60*1000).unref()
+ setInterval(startSync,Math.max(1,Number(process.env.CATALOG_SYNC_HOURS||12))*60*60*1000).unref()
 }
