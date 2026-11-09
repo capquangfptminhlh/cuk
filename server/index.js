@@ -1,11 +1,14 @@
 import express from 'express'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { db, sha256, verifyPassword, newOrderId } from './db.js'
 import { runCatalogSync, isCatalogSyncRunning } from './catalog-sync.js'
 import { isDemoMode, isCheckoutEnabled, publicProduct, validateAdminProductUpdate } from './store-policy.js'
 import { ordersToCsv } from './order-export.js'
+import { canTransitionOrder } from './order-status.js'
+import { buildSitemap, buildRobotsTxt, renderSeoHtml } from './seo.js'
 
 const app = express()
 app.disable('x-powered-by')
@@ -18,6 +21,7 @@ function rejectCrossOrigin(req,res,next) {
  return next()
 }
 app.use('/api', rejectCrossOrigin)
+app.use('/api/admin', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
 const selectProducts = db.prepare('SELECT * FROM products WHERE published = 1 ORDER BY featured DESC, created_at DESC, name ASC')
 const selectProduct = db.prepare('SELECT * FROM products WHERE slug = ? AND published = 1')
 const selectForOrder = db.prepare('SELECT id,name,price,stock,published FROM products WHERE id = ?')
@@ -30,7 +34,7 @@ function rateLimit(req,res,next) {
  next()
 }
 app.get('/api/config', (req,res) => res.json({ demo: isDemoMode(), checkoutEnabled: isCheckoutEnabled(), currency: 'VND', shopName: 'CUKTECH VN' }))
-app.get('/api/health', (_,res) => res.json({ ok: true }))
+app.get('/api/health', (_,res) => { try { db.prepare('SELECT 1').get(); res.json({ ok: true }) } catch { res.status(503).json({ ok: false }) } })
 app.get('/api/products', (req,res) => res.json(selectProducts.all().map(publicProduct)))
 app.get('/api/products/:slug', (req,res) => { const p=selectProduct.get(req.params.slug); p?res.json(publicProduct(p)):res.status(404).json({error:'Không tìm thấy sản phẩm'}) })
 app.post('/api/orders',rateLimit,(req,res)=>{
@@ -138,7 +142,7 @@ app.patch('/api/admin/orders/:id',requireAdmin,(req,res)=>{
  if(!statuses.includes(req.body?.status))return res.status(400).json({error:'Trạng thái không hợp lệ'})
  const order=db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id)
  if(!order)return res.status(404).json({error:'Không có đơn hàng'})
- if(order.status==='cancelled'&&req.body.status!=='cancelled')return res.status(400).json({error:'Không thể mở lại đơn đã hủy'})
+ if(!canTransitionOrder(order.status, req.body.status)) return res.status(409).json({error:'Chuyển trạng thái không hợp lệ hoặc đơn đã hoàn tất'})
  if(req.body.status==='cancelled' && order.status!=='cancelled'){
   db.exec('BEGIN IMMEDIATE')
   try{for(const item of JSON.parse(order.items)) db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.qty,item.id)
@@ -149,8 +153,23 @@ app.patch('/api/admin/orders/:id',requireAdmin,(req,res)=>{
 })
 const here=dirname(fileURLToPath(import.meta.url))
 const dist=join(here,'..','dist')
+app.get('/robots.txt', (_req, res) => res.type('text/plain').send(buildRobotsTxt({ ready: isCheckoutEnabled(), origin: process.env.PUBLIC_URL })))
+app.get('/sitemap.xml', (_req, res) => {
+ const products = db.prepare('SELECT slug, price, stock, published, source_id, media_approved, image_url FROM products').all()
+ res.type('application/xml').send(buildSitemap(products, { ready: isCheckoutEnabled(), origin: process.env.PUBLIC_URL }))
+})
 app.use(express.static(dist,{maxAge:'1h'}))
-app.get('*',(req,res)=>res.sendFile(join(dist,'index.html')))
+const htmlTemplate = () => readFileSync(join(dist, 'index.html'), 'utf8')
+app.get('/product/:slug', (req,res) => {
+ const product = selectProduct.get(req.params.slug)
+ if (!product) return res.status(404).type('html').send(renderSeoHtml(htmlTemplate(), { path: '/shop', ready: false, origin: process.env.PUBLIC_URL }))
+ res.type('html').send(renderSeoHtml(htmlTemplate(), { product: publicProduct(product), path: '/product/' + encodeURIComponent(product.slug), ready: isCheckoutEnabled(), origin: process.env.PUBLIC_URL }))
+})
+app.get('*', (req,res) => {
+ const path = ['/', '/shop', '/about', '/policy'].includes(req.path) ? req.path : '/'
+ const ready = isCheckoutEnabled() && !['/admin','/checkout'].includes(req.path) && !req.path.startsWith('/success/')
+ res.type('html').send(renderSeoHtml(htmlTemplate(), {path,ready,origin:process.env.PUBLIC_URL}))
+})
 const port=Number(process.env.PORT||3001)
 app.listen(port,()=>console.log(`CUKTECH VN running at :${port}`))
 // Only the running Node server performs scheduled sync. GitHub Actions builds do not mutate the database.
