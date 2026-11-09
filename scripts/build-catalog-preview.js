@@ -1,6 +1,7 @@
 /**
  * Generate a factual, non-purchasable 100%-audited catalog for static GitHub Pages.
- * Does NOT copy third-party product images or source descriptions to the public web.
+ * References source-hosted product images (does not download or rehost them).
+ * Confirm appropriate manufacturer image-use rights before commercial promotion.
  * Fails closed rather than deploying an incomplete inventory snapshot.
  */
 import {writeFile,mkdir} from 'node:fs/promises'
@@ -10,6 +11,23 @@ import {fetchCompleteCatalog} from '../worker/src/sync.js'
 import {catalogIdentity} from '../worker/src/catalog-core.js'
 
 const clean=s=>String(s??'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim()
+/** Shopify sends image objects with src fields and sometimes protocol-relative URLs. */
+export function sourceImages(product) {
+ const candidates=[product?.image,...(Array.isArray(product?.images)?product.images:[]),
+   ...(Array.isArray(product?.variants)?product.variants.map(v=>v?.featured_image):[])]
+ const unique=new Set()
+ for(const entry of candidates){
+  const value=typeof entry==='string'?entry:entry?.src
+  if(typeof value!=='string'||!value.trim())continue
+  try{
+   const u=new URL(value.trim(),'https://cuktech.com')
+   if(u.protocol!=='https:' || !['cdn.shopify.com','cuktech.com','www.cuktech.com'].includes(u.hostname.toLowerCase()))continue
+   if(!/\.(?:jpe?g|png|webp|avif)$/i.test(u.pathname))continue
+   unique.add(u.href)
+  }catch{/* ignore malformed source URL */}
+ }
+ return [...unique]
+}
 const categoryOf=p=>{
  const s=(p.title+' '+p.product_type+' '+(Array.isArray(p.tags)?p.tags.join(' '):p.tags||'')).toLowerCase()
  if(/cable|cord|usb-c to|cáp/.test(s))return 'cable'
@@ -23,6 +41,7 @@ export async function previewFromCatalog(products) {
   const key=await catalogIdentity(item.handle)
   const category=categoryOf(item)
   const title=clean(item.title).slice(0,160)
+  const photos=sourceImages(item)
   const capacity=title.match(/\d[\d,.]*\s*mAh/i)?.[0]||''
   const wattage=title.match(/\d{1,3}\s*W\b/i)?.[0]||''
   records.push({
@@ -31,7 +50,7 @@ export async function previewFromCatalog(products) {
    badge:'Danh mục tham khảo',
    description:'Mặt hàng trong danh mục công khai CUKTECH. Giá bán và tồn kho Việt Nam đang được cập nhật.',
    art:category==='cable'?'cable':category==='charger'?'charger':'powerbank',
-   capacity,wattage,image_url:'',source_images:'[]'
+   capacity,wattage,image_url:photos[0]||'',source_images:JSON.stringify(photos)
   })
  }
  return records
@@ -43,14 +62,16 @@ export async function buildSnapshot({fetchImpl=fetch,delay}={}){
  if(products.length!==scan.sourceCount || new Set(products.map(p=>p.slug)).size!==products.length){
   throw new Error('Product IDs are not unique; refusing to publish snapshot')
  }
+ const productsWithImages=products.filter(p=>p.image_url).length
+ const totalImages=products.reduce((n,p)=>n+JSON.parse(p.source_images).length,0)
  return {source:'https://cuktech.com/collections/all',sourceCount:scan.sourceCount,verified:true,
-  generatedAt:new Date().toISOString(),products}
+  productsWithImages,totalImages,generatedAt:new Date().toISOString(),products}
 }
 if(process.argv[1] && fileURLToPath(import.meta.url)===resolve(process.argv[1])){
  buildSnapshot().then(async data=>{
   const path=resolve('public/catalog.snapshot.json')
   await mkdir(dirname(path),{recursive:true})
   await writeFile(path,JSON.stringify(data,null,2)+'\n','utf8')
-  console.log('VERIFIED CATALOG SNAPSHOT',data.sourceCount,'products; no stock, price or third-party media published')
+  console.log('VERIFIED CATALOG SNAPSHOT',data.sourceCount,'products;',data.productsWithImages,'with image galleries;',data.totalImages,'source-hosted photos; no stock or price published')
  }).catch(e=>{console.error('CATALOG SNAPSHOT FAILED:',e.message);process.exitCode=1})
 }
