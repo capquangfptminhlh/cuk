@@ -47,7 +47,8 @@ const sourceColumns = {
  source_updated_at: "TEXT NOT NULL DEFAULT ''",
  source_synced_at: "TEXT NOT NULL DEFAULT ''",
  source_status: "TEXT NOT NULL DEFAULT ''",
- image_url: "TEXT NOT NULL DEFAULT ''"
+ image_url: "TEXT NOT NULL DEFAULT ''",
+ media_approved: "INTEGER NOT NULL DEFAULT 0"
 }
 const existing = new Set(db.prepare('PRAGMA table_info(products)').all().map(c => c.name))
 for (const [name, type] of Object.entries(sourceColumns)) {
@@ -77,7 +78,7 @@ const seed = [
  ['cable240','cuktech-usbc-240w','CUKTECH USB-C Fast Cable','cable',149000,189000,70,'1m','240W','','Cáp USB-C tốc độ cao, linh hoạt cho thiết bị tương thích.','cable',0],
  ['cable100','cuktech-usbc-100w','CUKTECH USB-C Braided Cable','cable',99000,129000,98,'2m','100W','','Cáp bện bền bỉ, chiều dài thuận tiện cho mọi góc làm việc.','cable',0]
 ]
-if (db.prepare('SELECT COUNT(*) AS n FROM products').get().n === 0) {
+if (process.env.STORE_DEMO !== '0' && db.prepare('SELECT COUNT(*) AS n FROM products').get().n === 0) {
  const insert = db.prepare('INSERT INTO products (id,slug,name,category,price,old_price,stock,capacity,wattage,badge,description,art,featured) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
  for (const p of seed) insert.run(...p)
 }
