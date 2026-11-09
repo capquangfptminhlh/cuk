@@ -7,6 +7,7 @@ import { db, sha256, verifyPassword, newOrderId } from './db.js'
 import { runCatalogSync, isCatalogSyncRunning } from './catalog-sync.js'
 import { isDemoMode, isCheckoutEnabled, publicProduct, validateAdminProductUpdate } from './store-policy.js'
 import { ordersToCsv } from './order-export.js'
+import { CheckoutError, placeOrder } from './checkout.js'
 import { canTransitionOrder } from './order-status.js'
 import { buildSitemap, buildRobotsTxt, renderSeoHtml } from './seo.js'
 
@@ -39,34 +40,13 @@ app.get('/api/products', (req,res) => res.json(selectProducts.all().map(publicPr
 app.get('/api/products/:slug', (req,res) => { const p=selectProduct.get(req.params.slug); p?res.json(publicProduct(p)):res.status(404).json({error:'Không tìm thấy sản phẩm'}) })
 app.post('/api/orders',rateLimit,(req,res)=>{
  if (!isCheckoutEnabled()) return res.status(503).json({error:'Cửa hàng chưa mở nhận đơn thật. Vui lòng liên hệ quản trị viên.'})
- const {customer,phone,address,note='',items}=req.body || {}
- if (typeof customer!=='string'||customer.trim().length<2||customer.length>100 ||
-     typeof phone!=='string'|| !/^(\+?84|0)\d{9}$/.test(phone.replace(/[ .-]/g,'')) ||
-     typeof address!=='string'||address.trim().length<12||address.length>500 ||
-     typeof note!=='string'||note.length>1000 || !Array.isArray(items)||items.length<1||items.length>40) {
-  return res.status(400).json({error:'Vui lòng kiểm tra tên, điện thoại, địa chỉ và sản phẩm'})
- }
- let validItems=[], total=0
- for (const item of items) {
-  if(typeof item.id!=='string' || !Number.isInteger(item.qty)||item.qty<1||item.qty>99) return res.status(400).json({error:'Số lượng không hợp lệ'})
-  const p=selectForOrder.get(item.id)
-  if(!p||!p.published||p.price<=0||p.stock<item.qty) return res.status(400).json({error:'Sản phẩm hết hàng hoặc chưa có giá'})
-  if(validItems.some(x=>x.id===p.id)) return res.status(400).json({error:'Sản phẩm bị lặp'})
-  total+=p.price*item.qty
-  validItems.push({id:p.id,name:p.name,price:p.price,qty:item.qty})
- }
- const id=newOrderId()
  try {
-  db.exec('BEGIN IMMEDIATE')
-  for(const item of validItems) {
-   const result=db.prepare('UPDATE products SET stock=stock-? WHERE id=? AND stock>=?').run(item.qty,item.id,item.qty)
-   if(result.changes!==1) throw new Error('Không đủ tồn kho')
-  }
-  db.prepare('INSERT INTO orders (id,customer,phone,address,note,items,total) VALUES (?,?,?,?,?,?,?)')
-   .run(id,customer.trim(),phone.trim(),address.trim(),note.trim(),JSON.stringify(validItems),total)
-  db.exec('COMMIT')
-  return res.status(201).json({id,total})
- } catch(e) {db.exec('ROLLBACK');return res.status(409).json({error:e.message})}
+   const result=placeOrder(db,req.body,req.get('Idempotency-Key')||'',newOrderId)
+   return res.status(result.replayed?200:201).json(result)
+ } catch(e) {
+   if (!(e instanceof CheckoutError)) console.error('[checkout]',e)
+   return res.status(e instanceof CheckoutError?e.status:500).json({error:e instanceof CheckoutError?e.message:'Có lỗi khi tạo đơn. Vui lòng thử lại.'})
+ }
 })
 app.post('/api/newsletter',rateLimit,(req,res)=>{
  const email=req.body?.email
