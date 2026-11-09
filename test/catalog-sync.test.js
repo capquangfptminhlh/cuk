@@ -79,3 +79,25 @@ test('does not quietly discard inaccessible HTML product detail',async()=>{
  })
  await assert.rejects(fetchPublicCatalog({fetchImpl:fn,delay:async()=>{}}),/chi tiết/)
 })
+
+test('Node importer retains Unicode product handles and distinct items with the same title',()=>{
+ const d=makeDatabase()
+ const p=(handle,title)=>({handle,title,description:'',images:[],variants:[],tags:'',source_updated_at:''})
+ const list=[
+  p('奖项01','奖项01'),p('奖项02','奖项02'),
+  p('ad1204u-红点','CUKTECH 67W Charger'),
+  p('charger-65w-model-a','CUKTECH Multi-ports GaN Charger'),
+  p('charger-65w-model-b','CUKTECH Multi-ports GaN Charger')
+ ]
+ const result=importCatalog(list,{database:d})
+ assert.equal(result.added,5)
+ const rows=d.prepare("SELECT source_id,slug FROM products WHERE source_id LIKE 'cuktech:%' ORDER BY source_id").all()
+ assert.equal(rows.length,5)
+ assert.equal(new Set(rows.map(x=>x.slug)).size,5)
+ assert.ok(rows.some(x=>x.source_id==='cuktech:奖项01'))
+ assert.ok(rows.some(x=>x.source_id==='cuktech:奖项02'))
+ assert.ok(rows.some(x=>x.source_id==='cuktech:ad1204u-红点'))
+ const again=importCatalog(list,{database:d})
+ assert.equal(again.added,0);assert.equal(again.updated,5)
+ d.close()
+})
