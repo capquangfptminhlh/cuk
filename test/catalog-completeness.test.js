@@ -103,3 +103,31 @@ test('partial 39/40 import does not insert anything in D1',async()=>{
  assert.equal(sqlite.prepare("SELECT status FROM catalog_sync_runs ORDER BY id DESC LIMIT 1").get().status,'failed')
  sqlite.close()
 })
+
+test('Shopify JSON explicitly exhausted on page 2 is complete even when HTML count is JS-rendered',async()=>{
+ const fetchImpl=async url=>{
+  const path=new URL(url).pathname+new URL(url).search
+  const data=path==='/robots.txt'?'User-agent: *\nAllow: /':
+    path==='/products.json?limit=250&page=1'?JSON.stringify({products:allProducts}):
+    path==='/products.json?limit=250&page=2'?JSON.stringify({products:[]}):
+    path==='/collections/all'?'<div id="collection">Product count inserted by client JavaScript</div>':''
+  return new Response(data,{status:200})
+ }
+ const result=await fetchCompleteCatalog({fetchImpl,delay:async()=>{}})
+ assert.equal(result.products.length,40)
+ assert.equal(result.sourceCount,40)
+ assert.equal(result.verificationMethod,'json-feed-exhausted')
+ assert.equal(result.observedCollectionCount,null)
+ assert.equal(result.verified,true)
+})
+test('A changed public HTML count still overrides JSON feed exhaustion and fails closed',async()=>{
+ const fetchImpl=async url=>{
+  const path=new URL(url).pathname+new URL(url).search
+  const data=path==='/robots.txt'?'User-agent: *\nAllow: /':
+    path==='/products.json?limit=250&page=1'?JSON.stringify({products:allProducts}):
+    path==='/products.json?limit=250&page=2'?JSON.stringify({products:[]}):
+    path==='/collections/all'?'<div class="utility-bar__item">41 products</div>':''
+  return new Response(data,{status:200})
+ }
+ await assert.rejects(fetchCompleteCatalog({fetchImpl,delay:async()=>{}}),/CATALOG_COUNT_MISMATCH/)
+})
