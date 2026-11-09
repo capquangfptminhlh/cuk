@@ -1,0 +1,19 @@
+name = "cuktech-api"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+FRONTEND_ORIGIN = "https://cuktech.vn"
+STORE_DEMO = "1"
+STORE_READY = "0"
+CATALOG_SYNC_ENABLED = "0"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cuktech-store"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_UUID"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["0 */12 * * *"]
