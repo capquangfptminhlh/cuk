@@ -1,90 +1,129 @@
-/** Read public product metadata only, comply with robots.txt and stop on blocks. */
+/**
+ * Import every publicly exposed CUKTECH Shopify product, including Unicode handles.
+ * Compares /products.json against the live collection's published count before any writes.
+ * Never infers Vietnam price/stock or republishes third-party imagery without approval.
+ */
+import {catalogIdentity,robotsAllows,assertCatalogComplete,collectionProductCount} from './catalog-core.js'
+
 const BASE='https://cuktech.com'
-const UA='CUKTECHVN-PublicCatalog/1.0 (+https://cuktech.vn)'
-const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))
-function permitted(robots,path) {
-  let agents=[],rules=[],group=[]
-  for(const raw of String(robots).split(/\r?\n/)) {
-    const line=raw.split('#')[0].trim(),idx=line.indexOf(':')
-    if(idx<0)continue
-    const key=line.slice(0,idx).trim().toLowerCase(),value=line.slice(idx+1).trim()
-    if(key==='user-agent') {
-      if(group.length) { agents.push({group,rules});rules=[];group=[] }
-      group.push(value.toLowerCase())
-    } else if((key==='disallow'||key==='allow')&&group.length) {
-      if(value)rules.push({path:value,allow:key==='allow'})
-    }
-  }
-  if(group.length)agents.push({group,rules})
-  const matched=agents.filter(g=>g.group.some(a=>a==='*'||UA.toLowerCase().includes(a)))
-  const all=matched.flatMap(g=>g.rules)
-  let best=null
-  for(const r of all) {
-    let pattern
-    try {
-      const escaped=r.path.replace(/[.*+?^$()|[\]{}]/g,'\\$&').replace(/\\\*/g,'.*')
-      pattern=new RegExp('^'+escaped)
-    } catch {return false}
-    if(pattern.test(path)) {
-      const len=r.path.replace(/[*$]/g,'').length
-      if(!best||len>best.len||(len===best.len&&r.allow))best={len,allow:r.allow}
-    }
-  }
-  return best?.allow??true
+const USER_AGENT='CUKTECHVN-PublicCatalog/1.0 (+https://cuktech.vn)'
+const MAX_PAGES=20
+const WAIT_MS=1250
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))
+const clean=(value,max=3000)=>String(value??'').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
+const safeImage=value=>{
+ try {const u=new URL(typeof value==='string'?value:value?.src||'',BASE);return u.protocol==='https:'?u.href:''}
+ catch{return ''}
 }
-const text=(v,n=2000)=>String(v||'').replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,n)
-function image(src) {try{const u=new URL(src,BASE);return u.protocol==='https:'?u.href:''}catch{return''}}
-const slug=s=>String(s||'').toLowerCase().replace(/[^a-z0-9-]/g,'-').replace(/^-+|-+$/g,'').slice(0,85)
-function classify(p) {
- const title=(p.title+' '+p.product_type+' '+(Array.isArray(p.tags)?p.tags.join(' '):p.tags||'')).toLowerCase()
- return /cable|cord|usb-c to/.test(title)?'cable':/gan|charger|adapter/.test(title)?'charger':/power|battery|bank/.test(title)?'powerbank':'other'
+const classify=p=>{
+ const text=(p.title+' '+p.product_type+' '+(Array.isArray(p.tags)?p.tags.join(' '):p.tags||'')).toLowerCase()
+ if(/cable|cord|usb-c to|cáp/.test(text))return 'cable'
+ if(/charger|adapter|gan|charging station|củ sạc/.test(text))return 'charger'
+ if(/power bank|battery|magnetic power|pin sạc/.test(text))return 'powerbank'
+ return 'other'
 }
-export async function syncCatalog(env) {
+async function fetchText(url,fetchImpl){
+ const result=await fetchImpl(url,{headers:{'User-Agent':USER_AGENT,Accept:'application/json,text/html;q=0.8'},redirect:'follow',signal:AbortSignal.timeout(18000)})
+ if(result.status===403||result.status===429)throw new Error('CUKTECH_SOURCE_BLOCKED: HTTP '+result.status+' (stop without bypass)')
+ if(result.ok&&new URL(result.url||url).origin!==BASE)throw new Error('CUKTECH_SOURCE_REDIRECTED: refusing outside-domain data')
+ return {ok:result.ok,status:result.status,text:result.ok?await result.text():''}
+}
+/** A complete fetch is validated against the live collection count when available. */
+export async function fetchCompleteCatalog({fetchImpl=fetch,delay=sleep,maxPages=MAX_PAGES}={}){
+ const robotsResponse=await fetchText(BASE+'/robots.txt',fetchImpl)
+ if(!robotsResponse.ok)throw new Error('Cannot check robots.txt; catalog sync is disabled safely')
+ const robots=robotsResponse.text
+ const request=async path=>{
+  if(!robotsAllows(robots,path,USER_AGENT))throw new Error('robots.txt disallows '+path)
+  return fetchText(BASE+path,fetchImpl)
+ }
+ let products=null,usedEndpoint=null
+ let requests=1
+ for(const endpoint of ['/products.json','/collections/all/products.json']){
+  if(!robotsAllows(robots,endpoint,USER_AGENT))continue
+  const list=[]
+  let available=true
+  for(let page=1;page<=maxPages;page++){
+   if(requests>1)await delay(WAIT_MS)
+   const path=endpoint+'?limit=250&page='+page
+   const response=await request(path);requests++
+   if(!response.ok){
+    if(page===1){available=false;break}
+    throw new Error('JSON pagination incomplete at page '+page+'; no import')
+   }
+   let parsed
+   try{parsed=JSON.parse(response.text)}catch{
+    if(page===1){available=false;break}
+    throw new Error('Invalid product JSON page '+page+'; no import')
+   }
+   if(!Array.isArray(parsed.products)){
+    if(page===1){available=false;break}
+    throw new Error('No products array at page '+page+'; no import')
+   }
+   list.push(...parsed.products)
+   if(parsed.products.length<250)break
+   if(page===maxPages)throw new Error('Public JSON exceeds maximum page count; no incomplete import')
+  }
+  if(available&&list.length){products=list;usedEndpoint=endpoint;break}
+ }
+ if(!products)throw new Error('No readable public Shopify JSON catalog. Never guess product count or bypass access controls.')
+ let expected=null
+ if(robotsAllows(robots,'/collections/all',USER_AGENT)){
+  if(requests>1)await delay(WAIT_MS)
+  const collection=await request('/collections/all');requests++
+  if(collection.ok)expected=collectionProductCount(collection.text)
+ }
+ const audited=assertCatalogComplete(products,expected)
+ return {...audited,mode:usedEndpoint==='/'?'other':usedEndpoint,requests}
+}
+function productPayload(p,identity,started){
+ const description=clean(p.body_html,3000)
+ const images=[...new Set((p.images||[]).map(safeImage).filter(Boolean))]
+ if(p.image?.src)images.push(...[safeImage(p.image)].filter(x=>x&&!images.includes(x)))
+ const variants=(p.variants||[]).map(v=>({
+  id:String(v.id??''),sku:clean(v.sku,100),title:clean(v.title,150),
+  option1:v.option1??'',option2:v.option2??'',option3:v.option3??'',
+  available:v.available===true,source_price:v.price==null?null:String(v.price)
+ }))
+ const type=classify(p)
+ const text=p.title+' '+description
+ const capacity=text.match(/\d[\d,.]*\s*mAh/i)?.[0]||''
+ const wattage=text.match(/\d{1,3}\s*W\b/i)?.[0]||''
+ const tags=Array.isArray(p.tags)?p.tags.join(', '):String(p.tags||'')
+ return [
+  identity.id,identity.slug,clean(p.title,160),type,capacity,wattage,description,
+  type==='charger'?'charger':type==='cable'?'cable':'powerbank',
+  0,0,0,0,identity.sourceId,identity.sourceUrl,clean(p.title,160),description,
+  tags.slice(0,2000),JSON.stringify(images),JSON.stringify(variants),
+  String(p.updated_at||'').slice(0,60),started,'active',images[0]||''
+ ]
+}
+const cols=['id','slug','name','category','capacity','wattage','description','art','featured','published','price','stock','source_id','source_url','source_title','source_description','source_tags','source_images','source_variants','source_updated_at','source_synced_at','source_status','image_url']
+const updatable=['source_url','source_title','source_description','source_tags','source_images','source_variants','source_updated_at','source_synced_at','source_status']
+const updateSql=updatable.map(k=>k+'=excluded.'+k).join(',')
+const insertSql='INSERT INTO products('+cols.join(',')+') VALUES('+cols.map(()=>'?').join(',')+') ON CONFLICT(source_id) DO UPDATE SET '+updateSql+',image_url=CASE WHEN products.media_approved=0 THEN excluded.image_url ELSE products.image_url END'
+
+/** Batches are idempotent. Never mark missing until every batch succeeds. */
+export async function syncCatalog(env,{fetchImpl=fetch,delay=sleep}={}){
  const started=new Date().toISOString()
- try {
-  const rr=await fetch(BASE+'/robots.txt',{headers:{'User-Agent':UA},signal:AbortSignal.timeout(15000)})
-  if(!rr.ok)throw new Error('Không đọc được robots.txt')
-  const robots=await rr.text()
-  const products=[]
-  for(let page=1;page<=20;page++) {
-   const path='/products.json?limit=250&page='+page
-   if(!permitted(robots,path))throw new Error('robots.txt từ chối danh mục JSON')
-   if(page>1)await pause(1500)
-   const r=await fetch(BASE+path,{headers:{'User-Agent':UA,Accept:'application/json'},signal:AbortSignal.timeout(20000)})
-   if(r.status===403||r.status===429)throw new Error('Nguồn từ chối truy cập hoặc giới hạn tần suất')
-   if(!r.ok||new URL(r.url).origin!==BASE)throw new Error('Không đọc được toàn bộ danh mục nguồn')
-   const data=await r.json()
-   if(!Array.isArray(data.products))throw new Error('Danh mục JSON không hợp lệ')
-   products.push(...data.products)
-   if(data.products.length<250)break
-   if(page===20)throw new Error('Danh mục quá lớn; không đồng bộ thiếu')
+ try{
+  const catalog=await fetchCompleteCatalog({fetchImpl,delay})
+  if(!catalog.verified)throw new Error('Cannot read source product count, refusing to claim complete import')
+  const statements=[]
+  for(const p of catalog.products){
+   const identity=await catalogIdentity(p.handle)
+   statements.push(env.DB.prepare(insertSql).bind(...productPayload(p,identity,started)))
   }
-  const unique=[...new Map(products.filter(p=>p.handle&&p.title).map(p=>[slug(p.handle),p])).values()]
-  if(!unique.length)throw new Error('Danh mục rỗng')
-  const cols=['id','slug','name','category','capacity','wattage','description','art','featured','published','price','stock','source_id','source_url','source_title','source_description','source_tags','source_images','source_variants','source_updated_at','source_synced_at','source_status','image_url']
-  const update=['source_url','source_title','source_description','source_tags','source_images','source_variants','source_updated_at','source_synced_at','source_status']
-    .map(k=>k+'=excluded.'+k).join(',')
-  const sql='INSERT INTO products('+cols.join(',')+') VALUES('+cols.map(()=>'?').join(',')+') ON CONFLICT(source_id) DO UPDATE SET '+update+',image_url=CASE WHEN products.media_approved=0 THEN excluded.image_url ELSE products.image_url END'
-  const stmts=[]
-  for(const p of unique) {
-   const handle=slug(p.handle)
-   if(!handle)continue
-   const type=classify(p)
-   const desc=text(p.body_html,3000)
-   const images=[...new Set((p.images||[]).map(v=>image(typeof v==='string'?v:v?.src)).filter(Boolean))]
-   const variants=(p.variants||[]).slice(0,50).map(v=>({id:String(v.id||''),sku:text(v.sku,100),title:text(v.title,150),available:v.available===true,source_price:v.price==null?null:String(v.price)}))
-   const tags=Array.isArray(p.tags)?p.tags.join(', '):String(p.tags||'')
-   const capacity=(p.title+' '+desc).match(/\d[\d,.]*\s*mAh/i)?.[0]||''
-   const wattage=(p.title+' '+desc).match(/\d{1,3}\s*W\b/i)?.[0]||''
-   const values=['source-'+handle,'imported-'+handle,text(p.title,160),type,capacity,wattage,desc,type==='charger'?'charger':type==='cable'?'cable':'powerbank',0,0,0,0,'cuktech:'+handle,BASE+'/products/'+handle,text(p.title,160),desc,tags.slice(0,2000),JSON.stringify(images),JSON.stringify(variants),String(p.updated_at||'').slice(0,60),started,'active',images[0]||'']
-   stmts.push(env.DB.prepare(sql).bind(...values))
-  }
-  await env.DB.batch(stmts)
+  // D1 limits transaction size. Retry remains safe if a later batch fails.
+  for(let i=0;i<statements.length;i+=40)await env.DB.batch(statements.slice(i,i+40))
   await env.DB.prepare("UPDATE products SET source_status='missing' WHERE source_id LIKE 'cuktech:%' AND source_synced_at<>?").bind(started).run()
-  await env.DB.prepare('INSERT INTO catalog_sync_runs(started_at,status,summary) VALUES(?,?,?)').bind(started,'success',JSON.stringify({total:unique.length,mode:'public-json'})).run()
-  return {total:unique.length}
- } catch(e) {
-  await env.DB.prepare('INSERT INTO catalog_sync_runs(started_at,status,summary) VALUES(?,?,?)').bind(started,'failed',String(e.message).slice(0,400)).run()
-  throw e
+  const stored=await env.DB.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN published=1 THEN 1 ELSE 0 END) AS visible, SUM(CASE WHEN published=0 THEN 1 ELSE 0 END) AS drafts FROM products WHERE source_id LIKE 'cuktech:%' AND source_status='active'").first()
+  if(Number(stored.total)!==catalog.products.length)throw new Error('D1_RECONCILIATION_FAILED: '+stored.total+' active products; expected '+catalog.products.length)
+  const summary={sourceCount:catalog.sourceCount,fetched:catalog.products.length,stored:stored.total,visible:stored.visible||0,drafts:stored.drafts||0,verified:true,mode:catalog.mode,requests:catalog.requests,syncedAt:started}
+  await env.DB.prepare('INSERT INTO catalog_sync_runs(started_at,status,summary) VALUES(?,?,?)').bind(started,'success',JSON.stringify(summary)).run()
+  return summary
+ }catch(error){
+  await env.DB.prepare('INSERT INTO catalog_sync_runs(started_at,status,summary) VALUES(?,?,?)').bind(started,'failed',String(error.message).slice(0,500)).run()
+  throw error
  }
 }

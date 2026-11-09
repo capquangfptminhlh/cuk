@@ -130,14 +130,16 @@ export async function fetchPublicCatalog({ fetchImpl = fetch, delay = wait, maxP
     const { body } = await get(pageUrl)
     if (!body) { if (page === 1) throw new CrawlError('Không truy cập được trang danh mục công khai'); break }
     const before = handles.size
-    for (const match of body.matchAll(/href\s*=\s*["']([^"']*\/products\/([a-z0-9-]+)(?:\?[^"']*)?)["']/gi)) handles.add(match[2])
+    for (const match of body.matchAll(/href\s*=\s*["']([^"']*\/products\/([^"'?/#]+)(?:\?[^"']*)?)["']/gi)) {
+      try { handles.add(decodeURIComponent(match[2])) } catch { /* invalid link */ }
+    }
     if (handles.size === before) break
     if (page === maxPages) throw new CrawlError('Danh mục HTML vượt giới hạn trang; dừng để tránh bỏ sót sản phẩm')
   }
   if (!handles.size) throw new CrawlError('Không tìm được sản phẩm công khai; không thay đổi dữ liệu cũ')
   const all = []
   for (const handle of handles) {
-    const { body } = await get('/products/' + handle)
+    const { body } = await get('/products/' + encodeURIComponent(handle))
     if (!body) throw new CrawlError(`Không lấy được chi tiết ${handle}; tránh đồng bộ thiếu sản phẩm`)
     const parsed = normalizeHtmlProduct(handle, body)
     if (!parsed) throw new CrawlError(`Không đọc được chi tiết ${handle}; tránh đồng bộ thiếu sản phẩm`)
@@ -148,8 +150,9 @@ export async function fetchPublicCatalog({ fetchImpl = fetch, delay = wait, maxP
 }
 function dedupe(products) { return [...new Map(products.map(p => [p.handle, p])).values()] }
 function normalizeShopifyProduct(p) {
-  const handle = safeSlug(p.handle)
-  if (!handle || !p.title) return null
+  // Unicode storefront handles are valid Shopify paths. Sanitizing to ASCII loses products.
+  const handle = String(p.handle ?? '').trim().normalize('NFC')
+  if (!handle || handle.length > 160 || /[/?#\s]/u.test(handle) || !p.title) return null
   const images = unique([...(p.images || []).map(i => safeImage(typeof i === 'string' ? i : i.src)), safeImage(p.image?.src)])
   const variants = (p.variants || []).map(v => ({ id: String(v.id ?? ''), sku: limitText(v.sku, 100), title: limitText(v.title, 150), option1: v.option1 ?? '', option2: v.option2 ?? '', option3: v.option3 ?? '', available: v.available === true, source_price: v.price == null ? null : String(v.price) }))
   const title = limitText(p.title, 160)
@@ -182,7 +185,7 @@ export function importCatalog(products, { database = db, mode = 'unknown', reque
   if (!Array.isArray(products) || products.length === 0) throw new Error('Danh mục rỗng; không ghi đè dữ liệu')
   const bySource = database.prepare('SELECT id FROM products WHERE source_id = ?')
   const bySlug = database.prepare('SELECT id,source_id FROM products WHERE slug = ?')
-  const byName = database.prepare('SELECT id,source_id FROM products WHERE lower(name) = lower(?)')
+  // Product names are not unique; distinct CUKTECH SKUs can share the same title.
   const insert = database.prepare(`INSERT INTO products
     (id,slug,name,category,price,stock,description,art,featured,published,capacity,wattage,
      source_id,source_url,source_title,source_description,source_tags,source_images,source_variants,source_updated_at,source_synced_at,source_status,image_url)
@@ -197,15 +200,16 @@ export function importCatalog(products, { database = db, mode = 'unknown', reque
   try {
     for (const p of dedupe(products)) {
       if (!p.handle || !p.title) { skipped++; continue }
-      const id = sourceId(p.handle), url = `${BASE}/products/${p.handle}`
+      const id = sourceId(p.handle), url = `${BASE}/products/${encodeURIComponent(p.handle)}`
       const category = categoryOf(p), spec = specOf(p)
       const image = p.images.find(Boolean) || ''
       const payload = [id,url,p.title,limitText(p.description,10000),limitText(Array.isArray(p.tags)?p.tags.join(', '):p.tags,2000),JSON.stringify(p.images),JSON.stringify(p.variants),p.source_updated_at || '',image]
-      const found = bySource.get(id) || bySlug.get(p.handle) || byName.get(p.title)
+      const found = bySource.get(id) || bySlug.get(p.handle)
       if (found && found.source_id && found.source_id !== id) { skipped++; continue }
       if (found) { update.run(...payload, found.id); updated++ }
       else {
-        const slug = bySlug.get(p.handle) ? 'imported-' + p.handle : p.handle
+        const ascii = safeSlug(p.handle)
+        const slug = ascii === p.handle ? p.handle : 'imported-' + (ascii || 'item').slice(0,60) + '-' + createHash('sha256').update(id).digest('hex').slice(0,12)
         insert.run(localId(p.handle), slug, p.title, category,
           limitText(p.description, 1000), category === 'cable' ? 'cable' : category === 'charger' ? 'charger' : 'powerbank',
           spec.capacity, spec.wattage, ...payload)
