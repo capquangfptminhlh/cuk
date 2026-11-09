@@ -31,7 +31,22 @@ function StoreProvider({children}){
  const [products,setProducts]=useState([]),[demo,setDemo]=useState(true),[checkoutEnabled,setCheckoutEnabled]=useState(false),[loading,setLoading]=useState(true)
  const [cart,setCart]=useState(()=>{try{return JSON.parse(localStorage.getItem('cuktech-cart')||'[]')}catch{return[]}})
  const [drawer,setDrawer]=useState(false),[searchOpen,setSearchOpen]=useState(false)
- const reload=()=>api('/api/products').then(setProducts).catch(()=>setProducts(FALLBACK_PRODUCTS))
+ const reload=async()=>{const [snapshot,live]=await Promise.allSettled([
+  fetch('catalog.snapshot.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('No catalog snapshot');return r.json()}),
+  api('/api/products')
+ ])
+ const verified=snapshot.status==='fulfilled'&&snapshot.value?.verified===true&&
+   Number(snapshot.value.sourceCount)===snapshot.value.products?.length
+ const catalog=verified?snapshot.value.products:[]
+ const apiProducts=live.status==='fulfilled'&&Array.isArray(live.value)?live.value:[]
+ const bySlug=new Map(catalog.map(p=>[p.slug,p]))
+ for(const p of apiProducts){
+  // D1 bootstrap contains non-sellable duplicates; verified source snapshot replaces those.
+  if(catalog.length&&String(p.id).startsWith('demo-')&&Number(p.price)===0)continue
+  bySlug.set(p.slug,p)
+ }
+ setProducts(bySlug.size?[...bySlug.values()]:FALLBACK_PRODUCTS)
+}
  useEffect(()=>{Promise.allSettled([reload(),api('/api/config').then(c=>{setDemo(c.demo);setCheckoutEnabled(c.checkoutEnabled===true)})]).finally(()=>setLoading(false))},[])
  useEffect(()=>localStorage.setItem('cuktech-cart',JSON.stringify(cart)),[cart])
  const add=(product,qty=1)=>{setCart(prev=>{const cur=prev.find(p=>p.id===product.id);return cur?prev.map(p=>p.id===product.id?{...p,qty:Math.min((product.stock||99),p.qty+qty)}:p):[...prev,{id:product.id,qty:Math.min(qty,product.stock||99)}]});setDrawer(true)}
