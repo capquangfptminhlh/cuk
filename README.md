@@ -42,3 +42,48 @@ Cấu hình reverse proxy HTTPS cho cuktech.vn về cổng 3001; không kết n�
 ### Dữ liệu mẫu
 
 Danh mục/tên model đối chiếu trang CUKTECH công khai, nhưng các mức **giá bán, tồn kho, mô tả minh họa trong code đều là dữ liệu demo**. Khi `STORE_DEMO=1`, giao diện hiện thông báo minh bạch. Không tự nhận hàng chính hãng hoặc chính sách bảo hành cụ thể khi chưa xác thực.
+
+## Đồng bộ danh mục sản phẩm công khai từ cuktech.com
+
+### Phạm vi và giới hạn
+
+- Bộ nhập `server/catalog-sync.js` đọc **dữ liệu sản phẩm công khai** từ `https://cuktech.com` (không yêu cầu đăng nhập, không vượt chặn).
+- Ưu tiên feed sản phẩm JSON có phân trang (`/products.json` hoặc `/collections/all/products.json`). Nếu website không hỗ trợ, đọc liên kết danh mục và siêu dữ liệu sản phẩm trên HTML công khai.
+- Tự động kiểm tra `robots.txt` trước khi đọc. Tự dừng khi bị 403/429, robots không truy cập được hoặc website cấm; không dùng proxy/stealth.
+- Tối đa 20 trang phân trang mỗi lần; có khoảng nghỉ 1,25 giây giữa các yêu cầu HTTP; nếu bị giới hạn trang, đồng bộ báo lỗi thay vì coi dữ liệu thiếu là đầy đủ.
+- Lưu tên gốc, mô tả, loại, thẻ, liên kết, danh sách hình ảnh và biến thể/SKU được công khai. Hình ảnh được **tham chiếu bằng URL**, không tải xuống/mirror lên server.
+- **Không suy đoán số lượng tồn kho**: `available` chỉ có thể là cờ còn hàng/hết hàng, không phải số lượng thực tế.
+- **Không tự đổi USD sang giá bán VND**: website nguồn đang có các mức `$0/$999` không đại diện cho giá thương mại tại Việt Nam.
+- Sản phẩm mới từ nguồn luôn tạo với **giá=0, tồn kho=0, ẩn**. Quản trị viên phải kiểm tra ảnh/nội dung và quyền sử dụng rồi tự điền giá, tồn kho và bật hiển thị. Các lần đồng bộ sau giữ nguyên thông tin kinh doanh do chủ shop cài đặt.
+- Dùng khóa `source_id` tránh trùng khi cập nhật; sản phẩm biến mất khỏi nguồn chỉ được gắn trạng thái `missing`, không tự xóa sản phẩm hay đơn hàng.
+- Nội dung/ảnh/nhãn hiệu trên cuktech.com có thể được bảo hộ quyền tác giả/nhãn hiệu: chỉ công khai lại trên trang thương mại của mình nếu anh có quyền sử dụng.
+
+### Chạy và theo dõi
+
+```bash
+npm install
+npm run sync:products    # Chạy 1 lần thủ công, đọc nguồn thực tế và lưu SQLite
+```
+
+Trong trang `/admin`, mở tab **Đồng bộ CUKTECH** để bấm **Chạy đồng bộ ngay**, kiểm tra số lượng nhập và lịch sử chạy. API tác động đến đồng bộ yêu cầu đăng nhập quản trị viên.
+
+Để tự đồng bộ khi server Node đang hoạt động (chạy lần đầu sau 20 giây, sau đó lặp lại mỗi 12 giờ), cấu hình môi trường:
+
+```env
+CATALOG_SYNC_ENABLED=1
+CATALOG_SYNC_HOURS=12
+```
+
+Mặc định tính năng lịch tự động **tắt** để chủ website xác minh điều khoản sử dụng/giấy phép hình ảnh trước. GitHub Actions chỉ build và chạy test; việc lên lịch không cập nhật một cơ sở dữ liệu SQLite nằm trên server đang chạy nếu chưa có kết nối tới server.
+
+Để tránh nhập dữ liệu rác hoặc đăng bán nhầm, hãy bật `STORE_DEMO=0` chỉ sau khi cập nhật giá VND và tồn kho thật qua `/admin`.
+
+### Kiểm thử
+
+```bash
+npm run check
+npm test
+npm run build
+```
+
+Các test giả lập dữ liệu công khai, xác minh chống trùng, bảo toàn giá VND/tồn kho và tuân thủ robots.txt. Kiểm thử **không chứng minh** đã tải toàn bộ danh mục ở site nguồn: phải chạy trên máy chủ thật rồi đối chiếu số lượng xuất ra với danh mục công khai hiện tại.

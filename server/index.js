@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { db, sha256, verifyPassword, newOrderId } from './db.js'
+import { runCatalogSync, isCatalogSyncRunning } from './catalog-sync.js'
 
 const app = express()
 app.disable('x-powered-by')
@@ -104,11 +105,21 @@ app.patch('/api/admin/products/:id',requireAdmin,(req,res)=>{
 app.post('/api/admin/products',requireAdmin,(req,res)=>{
  const {slug,name,category,price=0,stock=0,description='',art='powerbank',capacity='',wattage='',badge=''}=req.body||{}
  if(typeof slug!=='string'||!/^[a-z0-9-]{3,80}$/.test(slug)||typeof name!=='string'||name.length<3||name.length>160||
- !['powerbank','charger','cable'].includes(category)||!Number.isInteger(price)||price<0||!Number.isInteger(stock)||stock<0) return res.status(400).json({error:'Thông tin sản phẩm không hợp lệ'})
+ !['powerbank','charger','cable','other'].includes(category)||!Number.isInteger(price)||price<0||!Number.isInteger(stock)||stock<0) return res.status(400).json({error:'Thông tin sản phẩm không hợp lệ'})
  const id=randomBytes(12).toString('hex')
  try{ db.prepare('INSERT INTO products(id,slug,name,category,price,stock,description,art,capacity,wattage,badge) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
  .run(id,slug,name,category,price,stock,String(description).slice(0,1000),String(art).slice(0,30),String(capacity).slice(0,60),String(wattage).slice(0,60),String(badge).slice(0,40))
  res.status(201).json({id}) }catch{return res.status(409).json({error:'Slug đã tồn tại'})}
+})
+app.get('/api/admin/catalog/status',requireAdmin,(_,res)=>{
+ const latest=db.prepare('SELECT started_at,status,summary FROM catalog_sync_runs ORDER BY id DESC LIMIT 1').get() || null
+ const imported=db.prepare("SELECT count(*) as total, sum(CASE WHEN published=1 THEN 1 ELSE 0 END) as visible FROM products WHERE source_id LIKE 'cuktech:%'").get()
+ res.json({running:isCatalogSyncRunning(), latest, imported, autoEnabled:process.env.CATALOG_SYNC_ENABLED === '1'})
+})
+app.post('/api/admin/catalog/sync',requireAdmin,(req,res)=>{
+ if(isCatalogSyncRunning()) return res.status(409).json({error:'Đang đồng bộ'})
+ void runCatalogSync().catch(error=>console.error('[catalog-sync]',error.message))
+ res.status(202).json({ok:true,started:true})
 })
 app.patch('/api/admin/orders/:id',requireAdmin,(req,res)=>{
  const statuses=['new','confirmed','shipping','completed','cancelled']
@@ -130,3 +141,9 @@ app.use(express.static(dist,{maxAge:'1h'}))
 app.get('*',(req,res)=>res.sendFile(join(dist,'index.html')))
 const port=Number(process.env.PORT||3001)
 app.listen(port,()=>console.log(`CUKTECH VN running at :${port}`))
+// Only the running Node server performs scheduled sync. GitHub Actions builds do not mutate the database.
+if (process.env.CATALOG_SYNC_ENABLED === '1') {
+ const startSync=()=>{ if (!isCatalogSyncRunning()) void runCatalogSync().catch(error=>console.error('[catalog-sync]',error.message)) }
+ setTimeout(startSync,20_000).unref()
+ setInterval(startSync,Math.max(60,Number(process.env.CATALOG_SYNC_HOURS||12))*60*60*1000).unref()
+}

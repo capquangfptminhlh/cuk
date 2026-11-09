@@ -11,7 +11,9 @@
     "dev:api": "node --env-file-if-exists=.env --watch server/index.js",
     "build": "vite build",
     "start": "node --env-file-if-exists=.env server/index.js",
-    "check": "node --check server/index.js && node --check server/db.js"
+    "check": "node --check server/index.js && node --check server/db.js && node --check server/catalog-sync.js && node --check server/sync-cli.js",
+    "sync:products": "node --env-file-if-exists=.env server/sync-cli.js",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.21.2",

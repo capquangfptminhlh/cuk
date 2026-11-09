@@ -34,6 +34,35 @@ CREATE TABLE IF NOT EXISTS newsletter (
 );
 `)
 
+
+// Additive migration: preserve existing products, pricing, orders, and admin accounts.
+const sourceColumns = {
+ source_id: "TEXT NOT NULL DEFAULT ''",
+ source_url: "TEXT NOT NULL DEFAULT ''",
+ source_title: "TEXT NOT NULL DEFAULT ''",
+ source_description: "TEXT NOT NULL DEFAULT ''",
+ source_tags: "TEXT NOT NULL DEFAULT ''",
+ source_images: "TEXT NOT NULL DEFAULT '[]'",
+ source_variants: "TEXT NOT NULL DEFAULT '[]'",
+ source_updated_at: "TEXT NOT NULL DEFAULT ''",
+ source_synced_at: "TEXT NOT NULL DEFAULT ''",
+ source_status: "TEXT NOT NULL DEFAULT ''",
+ image_url: "TEXT NOT NULL DEFAULT ''"
+}
+const existing = new Set(db.prepare('PRAGMA table_info(products)').all().map(c => c.name))
+for (const [name, type] of Object.entries(sourceColumns)) {
+ if (!existing.has(name)) db.exec(`ALTER TABLE products ADD COLUMN ${name} ${type}`)
+}
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_source_id ON products(source_id) WHERE source_id != '';
+CREATE TABLE IF NOT EXISTS catalog_sync_runs (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ started_at TEXT NOT NULL,
+ status TEXT NOT NULL,
+ summary TEXT NOT NULL DEFAULT ''
+);
+`)
+
 const seed = [
  ['10-mini','cuktech-10-mini','CUKTECH 10 Mini Power Bank','powerbank',490000,590000,24,'10000mAh','55W','Nhỏ gọn','Thiết kế nhỏ gọn, tiện mang theo mỗi ngày.','mini',1],
  ['15-air','cuktech-15-air','CUKTECH 15 Air Power Bank','powerbank',1390000,1690000,18,'15000mAh','100W','Mới','Mỏng nhẹ, màn hình thông minh và sạc nhanh đa thiết bị.','air',1],
