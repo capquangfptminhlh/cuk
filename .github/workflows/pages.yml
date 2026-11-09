@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '0 */12 * * *'
 
 permissions:
   contents: read
@@ -26,6 +28,7 @@ jobs:
           VITE_API_BASE_URL: https://api.cuktech.vn
         run: |
           npm install --no-audit --no-fund
+          node scripts/build-catalog-preview.js
           npm run build
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
