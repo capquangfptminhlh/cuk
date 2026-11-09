@@ -92,7 +92,7 @@ test('40 products imported to D1 with unique source keys, and local prices persi
  assert.equal(again.visible,1)
  assert.equal(again.drafts,39)
  const after=sqlite.prepare("SELECT price,stock,published,media_approved FROM products WHERE source_id='cuktech:奖项01'").get()
- assert.deepEqual(after,{price:490000,stock:15,published:1,media_approved:1})
+ assert.equal(after.price,490000);assert.equal(after.stock,15);assert.equal(after.published,1);assert.equal(after.media_approved,1)
  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM products WHERE source_id LIKE 'cuktech:%'").get().n,40)
  sqlite.close()
 })
