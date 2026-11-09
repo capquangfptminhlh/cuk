@@ -108,10 +108,10 @@ export async function fetchPublicCatalog({ fetchImpl = fetch, delay = wait, maxP
       const url = `${endpoint}?limit=250&page=${page}`
       if (!robotsAllows(robots, url)) break
       const response = await get(url)
-      if (!response.body) break
+      if (!response.body) { if (page === 1) break; throw new CrawlError(`Danh mục JSON gián đoạn ở trang ${page}; không lưu kết quả thiếu`) }
       let parsed
-      try { parsed = JSON.parse(response.body) } catch { break }
-      if (!Array.isArray(parsed.products)) break
+      try { parsed = JSON.parse(response.body) } catch { if (page === 1) break; throw new CrawlError(`JSON trang ${page} không hợp lệ; không lưu kết quả thiếu`) }
+      if (!Array.isArray(parsed.products)) { if (page === 1) break; throw new CrawlError(`Dữ liệu JSON trang ${page} không hợp lệ`) }
       usable = true
       const batch = parsed.products
       all.push(...batch.map(normalizeShopifyProduct).filter(Boolean))
@@ -138,9 +138,10 @@ export async function fetchPublicCatalog({ fetchImpl = fetch, delay = wait, maxP
   const all = []
   for (const handle of handles) {
     const { body } = await get('/products/' + handle)
-    if (!body) continue
+    if (!body) throw new CrawlError(`Không lấy được chi tiết ${handle}; tránh đồng bộ thiếu sản phẩm`)
     const parsed = normalizeHtmlProduct(handle, body)
-    if (parsed) all.push(parsed)
+    if (!parsed) throw new CrawlError(`Không đọc được chi tiết ${handle}; tránh đồng bộ thiếu sản phẩm`)
+    all.push(parsed)
   }
   if (!all.length) throw new CrawlError('Không đọc được chi tiết sản phẩm')
   return { products: dedupe(all), mode: 'html-fallback', requests }

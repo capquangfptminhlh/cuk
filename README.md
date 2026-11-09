@@ -6,7 +6,7 @@ Website thương mại điện tử **độc lập**, thiết kế theo nhịp b
 
 - React 19 + Vite: trang chủ, danh mục, lọc, tìm kiếm, chi tiết, giỏ hàng, thanh toán COD, xác nhận đơn, newsletter, trang thông tin.
 - Express + SQLite (`node:sqlite`): sản phẩm, đơn hàng, tồn kho trừ nguyên tử, tài khoản admin và phiên đăng nhập.
-- `/admin`: đăng nhập, cập nhật giá/tồn kho/thông tin sản phẩm, thêm sản phẩm, quản lý trạng thái đơn hàng và quyền dùng ảnh nguồn. Danh mục phân trang; trang chi tiết có album ảnh sau khi duyệt quyền sử dụng.
+- `/admin`: đăng nhập, cập nhật giá/tồn kho/thông tin sản phẩm, thêm sản phẩm, quản lý trạng thái đơn hàng, xuất CSV đơn hàng và quyền dùng ảnh nguồn. Danh mục phân trang; trang chi tiết có album ảnh sau khi duyệt quyền sử dụng.
 - Responsive, hình minh họa thiết bị tự dựng bằng CSS; **chưa** dùng ảnh thật hay nội dung được cấp phép từ chủ thương hiệu.
 
 ## Chạy trên máy

@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto'
 import { db, sha256, verifyPassword, newOrderId } from './db.js'
 import { runCatalogSync, isCatalogSyncRunning } from './catalog-sync.js'
 import { isDemoMode, isCheckoutEnabled, publicProduct, validateAdminProductUpdate } from './store-policy.js'
+import { ordersToCsv } from './order-export.js'
 
 const app = express()
 app.disable('x-powered-by')
@@ -91,6 +92,12 @@ app.post('/api/admin/logout',requireAdmin,(req,res)=>{db.prepare('DELETE FROM se
 app.get('/api/admin/me',requireAdmin,(_,res)=>res.json({ok:true}))
 app.get('/api/admin/products',requireAdmin,(_,res)=>res.json(db.prepare('SELECT * FROM products ORDER BY name').all()))
 app.get('/api/admin/orders',requireAdmin,(_,res)=>res.json(db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT 500').all().map(o=>({...o,items:JSON.parse(o.items)}))))
+app.get('/api/admin/orders.csv',requireAdmin,(_,res)=>{
+ const orders=db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT 5000').all()
+ res.set('Cache-Control','no-store')
+ res.set('Content-Disposition','attachment; filename="cuktech-orders.csv"')
+ res.type('text/csv; charset=utf-8').send(ordersToCsv(orders))
+})
 app.patch('/api/admin/products/:id',requireAdmin,(req,res)=>{
  const p=db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id)
  if(!p)return res.status(404).json({error:'Không tìm thấy'})

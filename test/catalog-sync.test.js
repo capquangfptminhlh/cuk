@@ -61,3 +61,21 @@ test('fails closed when robots is unavailable or catalogue is blocked',async()=>
  const noRobots=fake({});await assert.rejects(fetchPublicCatalog({fetchImpl:noRobots.fn,delay:async()=>{}}),CrawlError)
  const denyAll=fake({'/robots.txt':'User-agent: *\nDisallow: /'});await assert.rejects(fetchPublicCatalog({fetchImpl:denyAll.fn,delay:async()=>{}}),CrawlError)
 })
+
+test('does not import a partially read 250+ item JSON catalog',async()=>{
+ const sample=Array.from({length:250},(_,i)=>record(i+1))
+ const {fn}=fake({
+ '/robots.txt':'User-agent: *\nAllow: /',
+ '/products.json?limit=250&page=1':{products:sample},
+ '/products.json?limit=250&page=2':undefined
+ })
+ await assert.rejects(fetchPublicCatalog({fetchImpl:fn,delay:async()=>{}}),/gián đoạn/)
+})
+test('does not quietly discard inaccessible HTML product detail',async()=>{
+ const {fn}=fake({
+ '/robots.txt':'User-agent: *\nDisallow: /products.json\nDisallow: /collections/all/products.json',
+ '/collections/all?page=1':'<a href="/products/example-cuktech">Example</a>',
+ '/collections/all?page=2':'<a href="/products/example-cuktech">Example</a>'
+ })
+ await assert.rejects(fetchPublicCatalog({fetchImpl:fn,delay:async()=>{}}),/chi tiết/)
+})
