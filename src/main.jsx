@@ -8,6 +8,21 @@ const Ctx=createContext(null)
 const vn=(n)=>Number(n||0).toLocaleString('vi-VN')+'₫'
 const categories=[{id:'all',label:'Tất cả sản phẩm'},{id:'powerbank',label:'Pin sạc dự phòng'},{id:'charger',label:'Củ sạc GaN'},{id:'cable',label:'Cáp & phụ kiện'},{id:'other',label:'Sản phẩm khác'}]
 const categoryName=id=>categories.find(c=>c.id===id)?.label||'Sản phẩm'
+// Preview catalog only: never treat prices or inventory as real before Worker deployment.
+const FALLBACK_PRODUCTS=[
+ ['demo-10','cuktech-10-mini','CUKTECH 10 Mini Power Bank','powerbank','mini','10000mAh','55W'],
+ ['demo-air','cuktech-15-air','CUKTECH 15 Air Power Bank','powerbank','air','15000mAh','100W'],
+ ['demo-20','cuktech-20-210w','CUKTECH 20 Power Bank','powerbank','powerbank','25000mAh','210W'],
+ ['demo-gan','cuktech-gan-100w','CUKTECH No.10 GaN Charger','charger','charger','','100W'],
+ ['demo-gan65','cuktech-gan-65w','CUKTECH 65W GaN Charger','charger','charger','','65W'],
+ ['demo-station','cuktech-30-300w','CUKTECH 30 Power Bank','powerbank','station','40000mAh','300W'],
+ ['demo-cable','cuktech-usbc-cable','CUKTECH USB-C Cable','cable','cable','','100W'],
+ ['demo-charger','cuktech-gan-30w','CUKTECH GaN3 Charger','charger','charger','','30W']
+].map(([id,slug,name,category,art,capacity,wattage])=>({
+ id,slug,name,category,art,capacity,wattage,price:0,old_price:0,stock:0,
+ featured:1,published:1,badge:'Bản xem trước',description:'Sản phẩm minh họa, chưa có giá và tồn kho để đặt hàng.',
+ image_url:'',source_images:'[]'
+}))
 // GitHub Pages only hosts static assets. All customer and admin data stays in Cloudflare D1.
 const API_URL=(import.meta.env.VITE_API_BASE_URL||'').replace(/\/$/,'')
 const api=async(url,options={})=>{const r=await fetch(API_URL+url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})},credentials:'include'});const v=await r.json().catch(()=>({}));if(!r.ok)throw new Error(v.error||'Không kết nối được API cửa hàng');return v}
@@ -16,7 +31,7 @@ function StoreProvider({children}){
  const [products,setProducts]=useState([]),[demo,setDemo]=useState(true),[checkoutEnabled,setCheckoutEnabled]=useState(false),[loading,setLoading]=useState(true)
  const [cart,setCart]=useState(()=>{try{return JSON.parse(localStorage.getItem('cuktech-cart')||'[]')}catch{return[]}})
  const [drawer,setDrawer]=useState(false),[searchOpen,setSearchOpen]=useState(false)
- const reload=()=>api('/api/products').then(setProducts)
+ const reload=()=>api('/api/products').then(setProducts).catch(()=>setProducts(FALLBACK_PRODUCTS))
  useEffect(()=>{Promise.allSettled([reload(),api('/api/config').then(c=>{setDemo(c.demo);setCheckoutEnabled(c.checkoutEnabled===true)})]).finally(()=>setLoading(false))},[])
  useEffect(()=>localStorage.setItem('cuktech-cart',JSON.stringify(cart)),[cart])
  const add=(product,qty=1)=>{setCart(prev=>{const cur=prev.find(p=>p.id===product.id);return cur?prev.map(p=>p.id===product.id?{...p,qty:Math.min((product.stock||99),p.qty+qty)}:p):[...prev,{id:product.id,qty:Math.min(qty,product.stock||99)}]});setDrawer(true)}
