@@ -64,7 +64,7 @@ test('40 public items verified against collection count; 39 of 40 fails before i
  const {fetchImpl,hits}=fakeSource()
  const full=await fetchCompleteCatalog({fetchImpl,delay:async()=>{}})
  assert.equal(full.products.length,40);assert.equal(full.sourceCount,40);assert.equal(full.verified,true)
- assert.deepEqual(hits,['/robots.txt','/products.json?limit=250&page=1','/collections/all'])
+ assert.deepEqual(hits,['/robots.txt','/products.json?limit=250&page=1','/products.json?limit=250&page=2','/collections/all'])
  const tooFew=fakeSource(allProducts.slice(0,39),40)
  await assert.rejects(fetchCompleteCatalog({fetchImpl:tooFew.fetchImpl,delay:async()=>{}}),/CATALOG_COUNT_MISMATCH/)
 })
@@ -102,4 +102,32 @@ test('partial 39/40 import does not insert anything in D1',async()=>{
  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM products WHERE source_id LIKE 'cuktech:%'").get().n,0)
  assert.equal(sqlite.prepare("SELECT status FROM catalog_sync_runs ORDER BY id DESC LIMIT 1").get().status,'failed')
  sqlite.close()
+})
+
+test('Shopify JSON explicitly exhausted on page 2 is complete even when HTML count is JS-rendered',async()=>{
+ const fetchImpl=async url=>{
+  const path=new URL(url).pathname+new URL(url).search
+  const data=path==='/robots.txt'?'User-agent: *\nAllow: /':
+    path==='/products.json?limit=250&page=1'?JSON.stringify({products:allProducts}):
+    path==='/products.json?limit=250&page=2'?JSON.stringify({products:[]}):
+    path==='/collections/all'?'<div id="collection">Product count inserted by client JavaScript</div>':''
+  return new Response(data,{status:200})
+ }
+ const result=await fetchCompleteCatalog({fetchImpl,delay:async()=>{}})
+ assert.equal(result.products.length,40)
+ assert.equal(result.sourceCount,40)
+ assert.equal(result.verificationMethod,'json-feed-exhausted')
+ assert.equal(result.observedCollectionCount,null)
+ assert.equal(result.verified,true)
+})
+test('A changed public HTML count still overrides JSON feed exhaustion and fails closed',async()=>{
+ const fetchImpl=async url=>{
+  const path=new URL(url).pathname+new URL(url).search
+  const data=path==='/robots.txt'?'User-agent: *\nAllow: /':
+    path==='/products.json?limit=250&page=1'?JSON.stringify({products:allProducts}):
+    path==='/products.json?limit=250&page=2'?JSON.stringify({products:[]}):
+    path==='/collections/all'?'<div class="utility-bar__item">41 products</div>':''
+  return new Response(data,{status:200})
+ }
+ await assert.rejects(fetchCompleteCatalog({fetchImpl,delay:async()=>{}}),/CATALOG_COUNT_MISMATCH/)
 })

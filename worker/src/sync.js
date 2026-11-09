@@ -37,18 +37,21 @@ export async function fetchCompleteCatalog({fetchImpl=fetch,delay=sleep,maxPages
   if(!robotsAllows(robots,path,USER_AGENT))throw new Error('robots.txt disallows '+path)
   return fetchText(BASE+path,fetchImpl)
  }
- let products=null,usedEndpoint=null
+ let products=null,usedEndpoint=null,feedExhausted=false
  let requests=1
  for(const endpoint of ['/products.json','/collections/all/products.json']){
   if(!robotsAllows(robots,endpoint,USER_AGENT))continue
   const list=[]
-  let available=true
+  let available=true, exhausted=false,previousSize=250
   for(let page=1;page<=maxPages;page++){
    if(requests>1)await delay(WAIT_MS)
    const path=endpoint+'?limit=250&page='+page
    const response=await request(path);requests++
    if(!response.ok){
     if(page===1){available=false;break}
+    // Some Shopify stores 404 beyond the last partial page: still
+    // require the collection's declared count for verification.
+    if(previousSize<250)break
     throw new Error('JSON pagination incomplete at page '+page+'; no import')
    }
    let parsed
@@ -60,21 +63,28 @@ export async function fetchCompleteCatalog({fetchImpl=fetch,delay=sleep,maxPages
     if(page===1){available=false;break}
     throw new Error('No products array at page '+page+'; no import')
    }
+   if(!parsed.products.length){exhausted=true;break}
+   previousSize=parsed.products.length
    list.push(...parsed.products)
-   if(parsed.products.length<250)break
    if(page===maxPages)throw new Error('Public JSON exceeds maximum page count; no incomplete import')
   }
-  if(available&&list.length){products=list;usedEndpoint=endpoint;break}
+  if(available&&list.length){products=list;usedEndpoint=endpoint;feedExhausted=exhausted;break}
  }
  if(!products)throw new Error('No readable public Shopify JSON catalog. Never guess product count or bypass access controls.')
- let expected=null
+ let collectionCount=null
  if(robotsAllows(robots,'/collections/all',USER_AGENT)){
   if(requests>1)await delay(WAIT_MS)
   const collection=await request('/collections/all');requests++
-  if(collection.ok)expected=collectionProductCount(collection.text)
+  if(collection.ok)collectionCount=collectionProductCount(collection.text)
  }
- const audited=assertCatalogComplete(products,expected)
- return {...audited,mode:usedEndpoint==='/'?'other':usedEndpoint,requests}
+ // HTML counts are sometimes inserted by storefront JavaScript, and can be
+ // absent in direct HTTP responses. Exhausting all JSON pages is an independent
+ // proof that every item in the PUBLIC FEED was retrieved; don't confuse this
+ // with a count verified from the rendered storefront.
+ if(collectionCount===null&&!feedExhausted)throw new Error('SOURCE_COUNT_UNVERIFIABLE: neither HTML product count nor exhausted JSON feed; refusing incomplete import')
+ const method=collectionCount===null?'json-feed-exhausted':'collection-count'
+ const audited=assertCatalogComplete(products,collectionCount===null?products.length:collectionCount)
+ return {...audited,verificationMethod:method,observedCollectionCount:collectionCount,mode:usedEndpoint,requests}
 }
 function productPayload(p,identity,started){
  const description=clean(p.body_html,3000)
@@ -119,7 +129,7 @@ export async function syncCatalog(env,{fetchImpl=fetch,delay=sleep}={}){
   await env.DB.prepare("UPDATE products SET source_status='missing' WHERE source_id LIKE 'cuktech:%' AND source_synced_at<>?").bind(started).run()
   const stored=await env.DB.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN published=1 THEN 1 ELSE 0 END) AS visible, SUM(CASE WHEN published=0 THEN 1 ELSE 0 END) AS drafts FROM products WHERE source_id LIKE 'cuktech:%' AND source_status='active'").first()
   if(Number(stored.total)!==catalog.products.length)throw new Error('D1_RECONCILIATION_FAILED: '+stored.total+' active products; expected '+catalog.products.length)
-  const summary={sourceCount:catalog.sourceCount,fetched:catalog.products.length,stored:stored.total,visible:stored.visible||0,drafts:stored.drafts||0,verified:true,mode:catalog.mode,requests:catalog.requests,syncedAt:started}
+  const summary={sourceCount:catalog.sourceCount,fetched:catalog.products.length,stored:stored.total,visible:stored.visible||0,drafts:stored.drafts||0,verified:true,verificationMethod:catalog.verificationMethod,observedCollectionCount:catalog.observedCollectionCount,mode:catalog.mode,requests:catalog.requests,syncedAt:started}
   await env.DB.prepare('INSERT INTO catalog_sync_runs(started_at,status,summary) VALUES(?,?,?)').bind(started,'success',JSON.stringify(summary)).run()
   return summary
  }catch(error){
