@@ -64,7 +64,7 @@ test('40 public items verified against collection count; 39 of 40 fails before i
  const {fetchImpl,hits}=fakeSource()
  const full=await fetchCompleteCatalog({fetchImpl,delay:async()=>{}})
  assert.equal(full.products.length,40);assert.equal(full.sourceCount,40);assert.equal(full.verified,true)
- assert.deepEqual(hits,['/robots.txt','/products.json?limit=250&page=1','/collections/all'])
+ assert.deepEqual(hits,['/robots.txt','/products.json?limit=250&page=1','/products.json?limit=250&page=2','/collections/all'])
  const tooFew=fakeSource(allProducts.slice(0,39),40)
  await assert.rejects(fetchCompleteCatalog({fetchImpl:tooFew.fetchImpl,delay:async()=>{}}),/CATALOG_COUNT_MISMATCH/)
 })
