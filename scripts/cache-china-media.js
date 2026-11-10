@@ -85,6 +85,8 @@ export async function cacheChinaMedia({
   const images=JSON.parse(p.source_images||'[]')
   p.image_url=cached.get(p.image_url)||p.image_url||''
   p.source_images=JSON.stringify(images.map(src=>cached.get(src)||src))
+  p.media_delivery='optimized-first-party-webp'
+  p.media_verified=images.every(src=>cached.has(src))
  }
  original.mediaDelivery='optimized-first-party-webp'
  original.cachedImages=cached.size
