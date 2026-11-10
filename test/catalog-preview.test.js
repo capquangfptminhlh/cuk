@@ -28,7 +28,9 @@ test('Static preview includes authentic image galleries but never invents price 
  assert.deepEqual(JSON.parse(rows[0].source_images),['https://cdn.shopify.com/abc.jpg'])
  assert.equal(rows[2].image_url,'')
  assert.equal(rows[2].source_images,'[]')
- assert.ok(rows.every(p=>!p.description.includes('Text copied')))
+ assert.equal(rows[0].description,'Text copied from third party')
+ assert.ok(rows.every(p=>!p.description.includes('<p>')))
+ assert.ok(rows.every(p=>p.source_market==='global'&&p.price===0&&p.stock===0))
 })
 test('Verified static snapshot has all expected public items',async()=>{
  const data=await buildSnapshot({fetchImpl:fakePublic(products,3),delay:async()=>{}})
@@ -61,4 +63,34 @@ test('Real-source image collector includes whole gallery, de-duplicates, blocks 
   'https://cuktech.com/cdn/shop/files/c.webp',
   'https://cdn.shopify.com/s/files/d.avif'
  ])
+})
+
+test('Full Shopify snapshot retains product description, category, variants, options and embedded photos',async()=>{
+ const input={
+  handle:'cuktech-100w-gan-usbc',
+  title:'CUKTECH 100W GaN Charger',
+  product_type:'Chargers',
+  tags:['GaN','100W'],
+  body_html:'<h2>CUKTECH Fast Charger</h2><p>GaN technology &amp; multi-port charging.</p><img src="https://cdn.shopify.com/s/files/detail.webp?v=2"><script>alert(1)</script>',
+  images:[{src:'https://cdn.shopify.com/s/files/main.jpg?v=1'}],
+  options:[{name:'Plug',values:['US','EU']}],
+  variants:[{id:123,sku:'AD1003',title:'EU',option1:'EU',option2:null,option3:null,price:'999.00'}]
+ }
+ const [product]=await previewFromCatalog([input])
+ assert.equal(product.name,'CUKTECH 100W GaN Charger')
+ assert.match(product.source_description,/GaN technology & multi-port charging/)
+ assert.match(product.description,/Fast Charger/)
+ assert.equal(product.source_product_type,'Chargers')
+ assert.equal(product.source_tags,'GaN, 100W')
+ assert.deepEqual(product.source_options,[{name:'Plug',values:['US','EU']}])
+ assert.equal(product.source_variants[0].sku,'AD1003')
+ assert.equal(product.source_variants[0].price,undefined)
+ assert.deepEqual(JSON.parse(product.source_images),[
+  'https://cdn.shopify.com/s/files/main.jpg?v=1',
+  'https://cdn.shopify.com/s/files/detail.webp?v=2'
+ ])
+ assert.equal(product.price,0)
+ assert.equal(product.stock,0)
+ assert.equal(product.source_market,'global')
+ assert.equal(product.source_site,'https://cuktech.com/products/cuktech-100w-gan-usbc')
 })
