@@ -36,6 +36,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           node scripts/build-catalog-preview.js
+          node scripts/enrich-global-models.js
           node scripts/build-china-catalog.js
       - name: Mirror authorized manufacturer images (opt-in only)
         if: vars.CHINA_MEDIA_MIRROR_ENABLED == 'true'
