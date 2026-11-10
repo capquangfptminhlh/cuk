@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Link, NavLink, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { Search, ShoppingBag, Menu, X, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, SlidersHorizontal, ChevronDown, Check, ShieldCheck, Truck, Headphones, Instagram, Facebook, Mail, LogOut, Package, LayoutDashboard, Save, Heart, Sparkles, Zap, ImageOff, ExternalLink } from 'lucide-react'
 import './styles.css'
+import {productPhotos,pickHomepageProducts} from './home-products.js'
 
 const Ctx=createContext(null)
 const vn=(n)=>Number(n||0).toLocaleString('vi-VN')+'₫'
@@ -120,14 +121,101 @@ function Header(){
 }
 function SearchOverlay({close}){const [term,setTerm]=useState(''),{products}=useStore(),nav=useNavigate();const results=products.filter(p=>p.name.toLowerCase().includes(term.toLowerCase())).slice(0,5);return <div className="search-box"><div className="search-inner"><Search size={23}/><input autoFocus value={term} onChange={e=>setTerm(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){close();nav('/shop?q='+encodeURIComponent(term))}}} placeholder="Tìm kiếm sản phẩm CUKTECH..."/><button className="icon-btn" onClick={close} aria-label="Đóng"><X/></button></div>{term&&<div className="search-suggest">{results.length?results.map(p=><Link onClick={close} key={p.id} to={'/product/'+p.slug}><span>{p.name}</span><span>{vn(p.price)} <ArrowUpRight size={15}/></span></Link>):<p>Không tìm thấy sản phẩm</p>}</div>}</div>}
 function CartDrawer(){const {drawer,setDrawer,detailed,total,qty,checkoutEnabled}=useStore(),nav=useNavigate();if(!drawer)return null;return <div className="overlay-layer" onMouseDown={()=>setDrawer(false)}><aside className="cart-drawer" onMouseDown={e=>e.stopPropagation()}><div className="drawer-top"><div><span className="overline">GIỎ HÀNG CỦA BẠN</span><h2>{detailed.length?`${detailed.length} sản phẩm`:'Giỏ hàng trống'}</h2></div><button className="icon-btn" onClick={()=>setDrawer(false)}><X/></button></div><div className="drawer-items">{detailed.length?detailed.map(c=><div className="drawer-item" key={c.id}><div className="tiny-art"><ProductArt art={c.product.art} image_url={c.product.image_url} name={c.product.name} source_market={c.product.source_market}/></div><div className="drawer-item-info"><Link onClick={()=>setDrawer(false)} to={'/product/'+c.product.slug}>{c.product.name}</Link><strong>{vn(c.product.price)}</strong><div className="stepper"><button onClick={()=>qty(c.id,c.qty-1)}>-</button><span>{c.qty}</span><button disabled={c.qty>=c.product.stock} onClick={()=>qty(c.id,c.qty+1)}>+</button></div></div></div>):<div className="empty-cart"><ShoppingBag size={43}/><p>Chưa có sản phẩm nào trong giỏ.</p><button className="btn btn-black" onClick={()=>{setDrawer(false);nav('/shop')}}>Khám phá sản phẩm <ArrowRight size={17}/></button></div>}</div>{detailed.length>0&&<div className="drawer-bottom"><div className="total-line"><span>Tạm tính</span><strong>{vn(total)}</strong></div><p>Phí giao hàng sẽ được xác nhận khi xử lý đơn.</p><button disabled={!checkoutEnabled} className="btn btn-black full" onClick={()=>{setDrawer(false);nav('/checkout')}}>{checkoutEnabled?'ĐẶT HÀNG NGAY':'CỬA HÀNG CHƯA MỞ NHẬN ĐƠN'} <ArrowRight size={17}/></button><button className="text-link" onClick={()=>setDrawer(false)}>Tiếp tục mua sắm</button></div>}</aside></div>}
-function Hero(){return <section className="hero"><div className="hero-copy"><div className="eyebrow"><span className="pulse-dot"/> CHUẨN MỰC NĂNG LƯỢNG MỚI</div><h1>Mạnh mẽ.<br/><span>Gọn nhẹ.</span><br/>Không giới hạn.</h1><p>Năng lượng bạn cần, cho mọi hành trình. Khám phá dòng sạc nhanh hiệu năng cao CUKTECH.</p><div className="hero-actions"><Link className="btn btn-white" to="/shop?category=powerbank">Khám phá ngay <ArrowUpRight size={18}/></Link><a className="hero-scroll" href="#featured">Sản phẩm nổi bật <ArrowRight size={16}/></a></div></div><div className="hero-visual"><div className="hero-orbit orb-a"/><div className="hero-orbit orb-b"/><ProductArt art="air" dark large/><div className="hero-spec"><strong>15 AIR</strong><span>100W <b>·</b> 15.000mAh</span></div></div><div className="hero-index">01 <span>/ 04</span></div></section>}
+/**
+ * Homepage photography always comes from actual cuktech.com catalog records.
+ * On a broken CDN image we try the next verified source photo, never show
+ * the old artificial power-bank/cable/charger drawings.
+ */
+function HomeProductPhoto({product,variant='category',eager=false}) {
+ const gallery=useMemo(()=>productPhotos(product),[product])
+ const [photoIndex,setPhotoIndex]=useState(0)
+ useEffect(()=>setPhotoIndex(0),[product?.id])
+ const image=gallery[photoIndex]
+ return <div className={'home-real-photo home-real-photo-'+variant}>
+  {image?<img className="home-real-img" src={image} alt={'Ảnh sản phẩm thật: '+product.name} decoding="async" loading={eager?'eager':'lazy'} fetchPriority={eager?'high':undefined} referrerPolicy="no-referrer" onError={()=>setPhotoIndex(i=>i+1)}/>:
+   <div className="home-photo-unavailable"><ImageOff size={27} strokeWidth={1.6}/><span>{product?'Ảnh sản phẩm chưa tải được':'Đang cập nhật danh mục'}</span><small>{product?.name||'CUKTECH'}</small></div>}
+ </div>
+}
+function Hero({product,loading}) {
+ return <section className="hero hero-source-real">
+  <div className="hero-copy">
+   <div className="eyebrow"><span className="pulse-dot"/> SẢN PHẨM CHÍNH HÃNG TỪ CUKTECH.COM</div>
+   <h1>Năng lượng.<br/><span>Đúng chuẩn.</span><br/>CUKTECH.</h1>
+   <p>Khám phá sản phẩm CUKTECH với ảnh và thông tin lấy trực tiếp từ danh mục công khai của hãng. Giá và tồn kho Việt Nam được xác nhận riêng.</p>
+   <div className="hero-actions">
+    <Link className="btn btn-white" to={product?'/product/'+product.slug:'/shop'}>{product?'Xem sản phẩm nổi bật':'Khám phá sản phẩm'} <ArrowUpRight size={18}/></Link>
+    <a className="hero-scroll" href="#featured">Xem ảnh thật <ArrowRight size={16}/></a>
+   </div>
+  </div>
+  <div className="hero-visual hero-real-visual">
+   <div className="hero-orbit orb-a"/><div className="hero-orbit orb-b"/>
+   <HomeProductPhoto product={product} variant="hero" eager/>
+   {product&&<Link className="hero-spec hero-source-product" to={'/product/'+product.slug}>
+    <strong>{product.name}</strong><span>{[product.capacity,product.wattage].filter(Boolean).join(' · ')||'Xem thông số sản phẩm'} <ArrowUpRight size={14}/></span>
+   </Link>}
+   {loading&&<span className="hero-loading-label">Đang tải sản phẩm từ cuktech.com…</span>}
+  </div>
+  <div className="hero-index">CUKTECH <span>/ ORIGINAL PRODUCT PHOTOS</span></div>
+ </section>
+}
 function SectionTitle({eyebrow,title,description,to='/shop'}){return <div className="section-heading"><div><span className="overline">{eyebrow}</span><h2>{title}</h2>{description&&<p>{description}</p>}</div><Link className="underlined-link" to={to}>Xem tất cả <ArrowUpRight size={16}/></Link></div>}
 function ProductCard({product}){const {add}=useStore();return <div className="product-card"><Link className="product-visual" to={'/product/'+product.slug}>{product.badge&&<span className="product-badge">{product.badge}</span>}<ProductArt art={product.art} image_url={product.image_url} name={product.name} source_market={product.source_market}/><span className="quick-view">Xem chi tiết <ArrowUpRight size={15}/></span></Link><div className="product-meta"><span className="category-kicker">{categoryName(product.category)}</span><Link to={'/product/'+product.slug}><h3>{product.name}</h3></Link><div className="product-specs">{product.capacity} {product.capacity&&product.wattage?' · ':''}{product.wattage}</div><div className="product-price"><strong>{product.price>0?vn(product.price):'Liên hệ'}</strong>{product.old_price>product.price&&<del>{vn(product.old_price)}</del>}</div><button disabled={product.stock<=0||product.price<=0} className="add-card" aria-label={'Thêm '+product.name+' vào giỏ'} onClick={()=>add(product)}><Plus size={21}/></button></div></div>}
-function Home(){const {products,loading}=useStore();const featured=products.filter(p=>p.featured).slice(0,4);return <main><Hero/><section className="section content-wrap" id="featured"><SectionTitle eyebrow="ĐƯỢC YÊU THÍCH" title="Sản phẩm nổi bật" description="Những thiết bị được thiết kế để đồng hành cùng bạn."/>{loading?<div className="skeleton-row">Đang tải sản phẩm...</div>:<div className="product-grid">{featured.map(p=><ProductCard key={p.id} product={p}/>)}</div>}</section>
- <section className="split-feature"><div className="split-copy"><span className="overline">THẾ HỆ PIN MỚI</span><h2>Nhẹ hơn.<br/>Mạnh hơn.<br/><em>Thông minh hơn.</em></h2><p>Từ công việc đến những chuyến đi xa, dòng Power Bank mang đến nguồn năng lượng khi bạn cần nhất.</p><Link className="btn btn-black" to="/shop?category=powerbank">Khám phá pin dự phòng <ArrowUpRight size={18}/></Link></div><div className="split-art"><div className="giant-type">POWER</div><ProductArt art="powerbank" large/></div></section>
- <section className="section content-wrap"><SectionTitle eyebrow="KHÁM PHÁ THEO DANH MỤC" title="Năng lượng cho mọi nhu cầu" to="/shop"/><div className="category-grid"><Link className="category-card cat-dark" to="/shop?category=powerbank"><div className="cat-label"><span>01 / POWER BANK</span><h3>Pin dự phòng</h3><span className="cat-cta">Khám phá <ArrowUpRight size={16}/></span></div><ProductArt art="mini" dark/></Link><Link className="category-card cat-light" to="/shop?category=charger"><div className="cat-label"><span>02 / CHARGER</span><h3>Củ sạc GaN</h3><span className="cat-cta">Khám phá <ArrowUpRight size={16}/></span></div><ProductArt art="charger"/></Link><Link className="category-card cat-silver" to="/shop?category=cable"><div className="cat-label"><span>03 / ACCESSORIES</span><h3>Cáp & phụ kiện</h3><span className="cat-cta">Khám phá <ArrowUpRight size={16}/></span></div><ProductArt art="cable"/></Link></div></section>
- <section className="story-banner"><div><span className="overline">CÔNG NGHỆ TRONG TỪNG CHI TIẾT</span><h2>Không chỉ là sạc.<br/>Là cách bạn tiếp tục.</h2><p>Thiết kế hiện đại. Hiệu suất đáng tin cậy. Sẵn sàng khi bạn cần.</p><Link className="btn btn-white" to="/about">Tìm hiểu thêm <ArrowUpRight size={18}/></Link></div><div className="story-ring"><Zap size={86} strokeWidth={1}/></div></section>
- <section className="section content-wrap"><SectionTitle eyebrow="MỞ RA KHẢ NĂNG MỚI" title="Sạc nhanh GaN" to="/shop?category=charger"/><div className="product-grid">{products.filter(p=>p.category==='charger').slice(0,4).map(p=><ProductCard key={p.id} product={p}/>)}</div></section><TrustStrip/><Newsletter/></main>}
+function Home(){
+ const {products,loading}=useStore()
+ const {hero,split,categoryCards,featured,chargers}=useMemo(()=>pickHomepageProducts(products),[products])
+ const categoriesOnHome=[
+  {category:'powerbank',index:'01 / POWER BANK',name:'Pin dự phòng',className:'cat-dark',product:categoryCards.powerbank},
+  {category:'charger',index:'02 / CHARGER',name:'Củ sạc GaN',className:'cat-light',product:categoryCards.charger},
+  {category:'cable',index:'03 / ACCESSORIES',name:'Cáp & phụ kiện',className:'cat-silver',product:categoryCards.cable}
+ ]
+ return <main>
+  <Hero product={hero} loading={loading}/>
+  <section className="section content-wrap" id="featured">
+   <SectionTitle eyebrow="ẢNH THẬT TỪ CUKTECH.COM" title="Sản phẩm nổi bật" description="Hình ảnh và mã sản phẩm đúng theo danh mục công khai của hãng."/>
+   {loading?<div className="skeleton-row">Đang tải sản phẩm...</div>:featured.length?
+    <div className="product-grid">{featured.map(p=><ProductCard key={p.id} product={p}/>)}</div>:
+    <p className="home-source-empty">Danh mục từ cuktech.com hiện chưa tải được. Không sử dụng ảnh hoặc sản phẩm minh họa thay thế.</p>}
+  </section>
+  <section className="split-feature">
+   <div className="split-copy"><span className="overline">CUKTECH / POWER BANK</span>
+    <h2>Nhẹ hơn.<br/>Mạnh hơn.<br/><em>Năng lượng thật.</em></h2>
+    <p>Khám phá sản phẩm pin sạc dự phòng cùng ảnh chụp, model và thông số từ nguồn chính thức.</p>
+    <Link className="btn btn-black" to={split?'/product/'+split.slug:'/shop?category=powerbank'}>
+     {split?'Xem '+split.name:'Khám phá pin dự phòng'} <ArrowUpRight size={18}/>
+    </Link>
+   </div>
+   <div className="split-art split-source-photo">
+    <span className="giant-type" aria-hidden="true">POWER</span>
+    <HomeProductPhoto product={split} variant="split"/>
+    {split&&<span className="split-product-name">{split.name}</span>}
+   </div>
+  </section>
+  <section className="section content-wrap">
+   <SectionTitle eyebrow="CHỌN ĐÚNG SẢN PHẨM" title="Khám phá theo danh mục" to="/shop"/>
+   <div className="category-grid">
+    {categoriesOnHome.map(item=><Link key={item.category} className={'category-card home-category-real '+item.className} to={item.product?'/product/'+item.product.slug:'/shop?category='+item.category}>
+     <div className="cat-label"><span>{item.index}</span><h3>{item.name}</h3><span className="cat-cta">{item.product?'Xem sản phẩm thật':'Xem danh mục'} <ArrowUpRight size={16}/></span></div>
+     <HomeProductPhoto product={item.product} variant="category"/>
+     {item.product&&<div className="home-category-model">{item.product.name}</div>}
+    </Link>)}
+   </div>
+  </section>
+  <section className="story-banner">
+   <div><span className="overline">ĐÚNG NGUỒN · ĐÚNG HÌNH</span>
+    <h2>Không phải ảnh mẫu.<br/>Là sản phẩm thật.</h2>
+    <p>Toàn bộ ảnh sản phẩm trên trang chủ được chọn từ danh mục cuktech.com. Không dùng mô hình minh họa thay cho hàng thật.</p>
+    <Link className="btn btn-white" to="/shop">Khám phá danh mục <ArrowUpRight size={18}/></Link>
+   </div>
+   {categoryCards.charger&&<div className="story-real-photo"><HomeProductPhoto product={categoryCards.charger} variant="story"/><span>{categoryCards.charger.name}</span></div>}
+  </section>
+  <section className="section content-wrap">
+   <SectionTitle eyebrow="NGUỒN CUKTECH.COM" title="Sạc nhanh GaN" to="/shop?category=charger"/>
+   {chargers.length?<div className="product-grid">{chargers.map(p=><ProductCard key={p.id} product={p}/>)}</div>:
+    <p className="home-source-empty">Chưa có sản phẩm củ sạc có ảnh được xác minh trong danh mục nguồn.</p>}
+  </section>
+  <TrustStrip/><Newsletter/>
+ </main>
+}
 function TrustStrip(){return <section className="trust-strip"><div className="content-wrap trust-inner"><div><Zap/><strong>Công nghệ sạc nhanh</strong><span>Hiệu năng tối ưu cho thiết bị tương thích</span></div><div><ShieldCheck/><strong>Thông tin minh bạch</strong><span>Kiểm tra thông số trước khi mua</span></div><div><Truck/><strong>Hỗ trợ giao hàng</strong><span>Xác nhận phí và thời gian sau khi đặt</span></div><div><Headphones/><strong>Hỗ trợ đơn hàng</strong><span>Liên hệ cửa hàng để được tư vấn</span></div></div></section>}
 function Newsletter(){const [email,setEmail]=useState(''),[message,setMessage]=useState('');const submit=async e=>{e.preventDefault();try{await api('/api/newsletter',{method:'POST',body:JSON.stringify({email})});setMessage('Cảm ơn bạn đã đăng ký!');setEmail('')}catch(e){setMessage(e.message)}};return <section className="newsletter"><div className="content-wrap newsletter-inner"><div><span className="overline">LUÔN ĐI TRƯỚC MỘT BƯỚC</span><h2>Đừng bỏ lỡ điều mới.</h2><p>Cập nhật dòng sản phẩm và thông tin ưu đãi từ cửa hàng.</p></div><form onSubmit={submit}><div className="newsletter-input"><Mail size={20}/><input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="Nhập email của bạn"/><button type="submit">Đăng ký <ArrowRight size={18}/></button></div>{message&&<small role="status">{message}</small>}</form></div></section>}
 function Catalog(){const {products}=useStore(),loc=useLocation(),nav=useNavigate();const params=new URLSearchParams(loc.search),cat=params.get('category')||'all',q=params.get('q')||'',sort=params.get('sort')||'featured';const [query,setQuery]=useState(q);useEffect(()=>setQuery(q),[q]);const page=1,perPage=1000;const filtered=useMemo(()=>{let a=products.filter(p=>(cat==='all'||p.category===cat)&&(p.name+' '+(p.source_description||'')+' '+(p.source_model_codes||[]).join(' ')).toLocaleLowerCase('vi').includes(q.toLocaleLowerCase('vi')));return a.sort((a,b)=>sort==='price-asc'?a.price-b.price:sort==='price-desc'?b.price-a.price:sort==='name'?a.name.localeCompare(b.name):b.featured-a.featured)},[products,cat,q,sort]);const pages=Math.max(1,Math.ceil(filtered.length/perPage)),currentPage=Math.min(page,pages),pageProducts=filtered.slice((currentPage-1)*perPage,currentPage*perPage);const edit=(key,value)=>{const p=new URLSearchParams(loc.search);if(key!=='page')p.delete('page');value?p.set(key,value):p.delete(key);nav('/shop'+(p.toString()?'?'+p.toString():''))};return <main><div className="catalog-hero"><div className="content-wrap"><span className="overline">CUKTECH.COM / OFFICIAL PRODUCT CATALOG</span><h1>{cat==='all'?'Sản phẩm CUKTECH':categoryName(cat)}</h1><p>Danh mục sản phẩm và ảnh thật từ cuktech.com, không lẫn mẫu từ thị trường khác.</p></div></div><div className="content-wrap catalog-main"><div className="catalog-toolbar"><span>{filtered.length} sản phẩm</span><div className="toolbar-actions"><div className="catalog-search"><Search size={17}/><input value={query} placeholder="Tìm sản phẩm..." onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')edit('q',query)}}/><button onClick={()=>edit('q',query)} aria-label="Tìm"><ArrowRight size={16}/></button></div><label><SlidersHorizontal size={17}/><select value={sort} onChange={e=>edit('sort',e.target.value)}><option value="featured">Nổi bật</option><option value="price-asc">Giá thấp đến cao</option><option value="price-desc">Giá cao đến thấp</option><option value="name">Tên A–Z</option></select></label></div></div><p className="catalog-origin-notice">Danh mục chính thức từ <a href="https://cuktech.com/collections/all" target="_blank" rel="noopener noreferrer">cuktech.com</a>. Toàn bộ sản phẩm công khai, album ảnh và mô tả gốc được đồng bộ; giá và tồn kho Việt Nam sẽ được xác nhận riêng.</p><div className="category-tabs">{categories.map(c=><button key={c.id} className={cat===c.id?'active':''} onClick={()=>edit('category',c.id==='all'?'':c.id)}>{c.label}</button>)}</div>{filtered.length?<div className="product-grid catalog-grid">{pageProducts.map(p=><ProductCard key={p.id} product={p}/>)}</div>:<div className="no-results">Không có sản phẩm phù hợp. <button onClick={()=>nav('/shop')}>Xem tất cả</button></div>}{pages>1&&<nav className="pagination" aria-label="Phân trang sản phẩm"><button disabled={currentPage===1} onClick={()=>edit('page',String(currentPage-1))}>‹ Trang trước</button><span>Trang {currentPage} / {pages}</span><button disabled={currentPage===pages} onClick={()=>edit('page',String(currentPage+1))}>Trang sau ›</button></nav>}</div><Newsletter/></main>}
