@@ -24,21 +24,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Restore manufacturer's image cache
+      - name: Restore manufacturer media cache (opt-in only)
+        if: vars.CHINA_MEDIA_MIRROR_ENABLED == 'true'
         uses: actions/cache@v4
         with:
           path: .image-cache/cn
           key: cuktech-cn-media-${{ github.run_id }}
           restore-keys: |
             cuktech-cn-media-
-      - name: Build website for cuktech.vn
-        env:
-          VITE_API_BASE_URL: https://api.cuktech.vn
+      - name: Prepare complete public catalogues
         run: |
           npm install --no-audit --no-fund
           node scripts/build-catalog-preview.js
           node scripts/build-china-catalog.js
-          node scripts/cache-china-media.js
+      - name: Mirror authorized manufacturer images (opt-in only)
+        if: vars.CHINA_MEDIA_MIRROR_ENABLED == 'true'
+        run: node scripts/cache-china-media.js
+      - name: Build website for cuktech.vn
+        env:
+          VITE_API_BASE_URL: https://api.cuktech.vn
+        run: |
           npm run build
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
