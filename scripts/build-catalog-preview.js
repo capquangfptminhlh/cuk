@@ -28,6 +28,36 @@ export function sourceImages(product) {
  }
  return [...unique]
 }
+const CODE=/^[a-z]{1,5}\d{2,6}[a-z0-9]{0,6}$/i
+/** Only explicit model identifiers, never guess a SKU from marketing wording.
+ * Handles of the form p23-description are reliable; special/award variants
+ * must not be treated as the ordinary base model.
+ */
+export function sourceModelCodes(product) {
+ const found=new Set()
+ const title=String(product?.title||'')
+ const handle=String(product?.handle||'').toLowerCase()
+ const special=/\b(?:award|edition|limited|red[- ]?dot|epda|idea|special|holiday|new[- ]?year)\b|红点|限量|新年|三体|奖项/i.test(title+' '+handle)
+ const add=value=>{const s=String(value||'').trim().toLowerCase();if(CODE.test(s))found.add(s)}
+ const first=handle.split('-')[0]
+ if(!special&&CODE.test(first))add(first)
+ for(const variant of product?.variants||[]) {
+  const sku=String(variant?.sku||'').trim()
+  // A merchant variant identifier with a size/colour suffix is not an exact model.
+  if(!special)add(sku)
+ }
+ if(!special) {
+  const titleTokens=title.matchAll(/(?:^|[^a-z0-9_-])([a-z]{1,5}\d{2,6}[a-z0-9]{0,6})(?![a-z0-9_-])/gi)
+  for(const m of titleTokens)add(m[1])
+ }
+ const body=String(product?.body_html||'')
+   .replace(/<[^>]*>/g,' ')
+   .replace(/&nbsp;|&#160;/gi,' ')
+   .replace(/&colon;/gi,':')
+ const model=body.match(/(?:\bmodel(?:\s*(?:no\.?|number))?\b|型号)\s*[:：]\s*(?:CUKTECH\s*)?([a-z]{1,5}\d{2,6}[a-z0-9]{0,6})(?![a-z0-9_-])/i)
+ if(!special&&model)add(model[1])
+ return [...found].sort()
+}
 const categoryOf=p=>{
  const s=(p.title+' '+p.product_type+' '+(Array.isArray(p.tags)?p.tags.join(' '):p.tags||'')).toLowerCase()
  if(/cable|cord|usb-c to|cáp/.test(s))return 'cable'
@@ -50,7 +80,8 @@ export async function previewFromCatalog(products) {
    badge:'Danh mục tham khảo',
    description:'Mặt hàng trong danh mục công khai CUKTECH. Giá bán và tồn kho Việt Nam đang được cập nhật.',
    art:category==='cable'?'cable':category==='charger'?'charger':'powerbank',
-   capacity,wattage,image_url:photos[0]||'',source_images:JSON.stringify(photos)
+   capacity,wattage,source_model_codes:sourceModelCodes(item),
+   source_site:key.sourceUrl,image_url:photos[0]||'',source_images:JSON.stringify(photos)
   })
  }
  return records
