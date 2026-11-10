@@ -40,6 +40,8 @@ jobs:
       - name: Mirror authorized manufacturer images (opt-in only)
         if: vars.CHINA_MEDIA_MIRROR_ENABLED == 'true'
         run: node scripts/cache-china-media.js
+      - name: Match international CUKTECH photos to exact China model codes
+        run: node scripts/match-global-photos.js
       - name: Build website for cuktech.vn
         env:
           VITE_API_BASE_URL: https://api.cuktech.vn
