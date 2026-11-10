@@ -23,3 +23,21 @@
 .admin-media-approval input{width:17px;height:17px;flex:none;cursor:pointer}
 button:disabled{cursor:not-allowed}
 @media(max-width:600px){.pagination{gap:10px}.pagination button{padding:9px 12px;font-size:12px}.product-photo .detail-real-photo{max-height:370px;padding:12px}.gallery-thumbs button{min-width:60px;min-height:60px}}
+
+/* Complete manufacturer catalogue: visible origin controls and all product cards */
+.source-tabs{display:flex;flex-wrap:wrap;gap:10px;margin:22px 0 18px;border-bottom:1px solid #e7eaee;padding-bottom:17px}
+.source-tabs button{background:#f6f7f9;border:1px solid #e1e5e8;color:#424c57;border-radius:24px;padding:10px 17px;font:inherit;font-size:13px;cursor:pointer;transition:all .2s}
+.source-tabs button:hover{border-color:#89949d}
+.source-tabs button.active{background:#15191e;color:#fff;border-color:#15191e}
+.product-source-note{display:flex;flex-wrap:wrap;gap:5px;color:#68727a;font-size:12px;line-height:1.6;margin:14px 0}
+.product-source-note a{color:#174f81;display:inline-flex;align-items:center;gap:3px;text-decoration:underline}
+.product-gallery{min-width:0}
+.gallery-thumbs{overflow-x:auto;overflow-y:hidden;max-width:100%;padding:0 0 12px;scroll-snap-type:x proximity}
+.gallery-thumbs button{flex:0 0 82px;scroll-snap-align:start}
+.gallery-thumbs button img{height:80px;max-height:80px}
+.full-gallery{padding:20px 0 54px}
+.full-gallery summary{cursor:pointer;font-size:16px;font-weight:700;border:1px solid #e5e7e9;padding:18px 22px;border-radius:12px;list-style:disclosure-closed}
+.full-gallery[open] summary{margin-bottom:24px}
+.full-gallery-images{display:flex;flex-direction:column;align-items:center;gap:6px;max-width:880px;margin:auto}
+.full-gallery-images img{width:100%;height:auto;object-fit:contain;display:block;min-height:12px}
+@media(max-width:600px){.source-tabs{gap:7px}.source-tabs button{font-size:11px;padding:8px 12px}.gallery-thumbs button{flex-basis:66px}}
