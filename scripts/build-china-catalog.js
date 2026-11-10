@@ -125,6 +125,7 @@ function toProduct(row){
  return {
   id:'china-'+row.sku,slug:'cn-'+row.sku,name:translatedTitle(name,row.sku),
   source_original_title:name,source_market:'china',source_site:source,
+  media_delivery:'external-source-unverified',media_verified:false,
   category,art:category==='charger'?'charger':category==='cable'?'cable':'powerbank',
   price:0,old_price:0,stock:0,featured:0,published:1,
   badge:'Danh mục Trung Quốc',
