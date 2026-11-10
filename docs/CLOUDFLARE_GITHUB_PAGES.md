@@ -47,3 +47,8 @@ Tùy chọn: triển khai bằng workflow GitHub thủ công `cloudflare-worker.
 - Khi đã kiểm thử thực tế và có đầy đủ thông tin mới đặt `STORE_DEMO=0` và `STORE_READY=1` rồi deploy lại.
 - HTML và robots của bản GitHub Pages đang `noindex` trong chế độ demo; cần điều chỉnh khi mở bán.
 - SQLite của VPS cũ không tự di chuyển sang D1. Dữ liệu thực, mật khẩu và Cloudflare token tuyệt đối không được commit.
+
+## CUKTECH Trung Quốc: tình trạng tải ảnh
+Danh mục chính thức có 88 model đã được đọc từ các trang sản phẩm của hãng. GitHub Pages tạo danh mục và liên kết ảnh gốc, nhưng ở lần chạy 42752348456, máy chủ ảnh CUKTECH Trung Quốc trả HTTP 403 cho 2.043 URL ảnh duy nhất khi GitHub Actions thử tải và tối ưu. Không sử dụng kỹ thuật vượt chặn để sao chép ảnh.
+
+Mặc định **CHINA_MEDIA_MIRROR_ENABLED** không được bật và bản deploy vẫn thành công với các liên kết ảnh gốc, kèm liên kết đến trang sản phẩm chính thức để xem khi ảnh không tải được. Chỉ bật Actions variable này thành `true` sau khi có quyền sử dụng ảnh thương mại và nguồn tải ảnh được hãng cho phép; nếu không, bước tải sẽ cố ý báo lỗi thay vì xuất bản album thiếu. Ảnh quốc tế trên cdn.shopify.com không bị thay đổi.
