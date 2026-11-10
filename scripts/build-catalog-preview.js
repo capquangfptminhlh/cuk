@@ -11,10 +11,28 @@ import {fetchCompleteCatalog} from '../worker/src/sync.js'
 import {catalogIdentity} from '../worker/src/catalog-core.js'
 
 const clean=s=>String(s??'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim()
+/**
+ * Preserve readable public product information without injecting remote HTML
+ * into React. These are original source details, not verified Vietnam prices.
+ */
+export function sourceDescription(body) {
+ const html=String(body||'')
+ return html
+  .replace(/<(?:script|style|iframe|svg)\b[^>]*>[\s\S]*?<\/(?:script|style|iframe|svg)\s*>/gi,' ')
+  .replace(/<(?:br|\/p|\/li|\/h[1-6]|\/div|\/tr|\/section)\b[^>]*>/gi,'\n')
+  .replace(/<[^>]+>/g,' ')
+  .replace(/&(nbsp|#160|#xA0);/gi,' ')
+  .replace(/&amp;/gi,'&').replace(/&lt;/gi,'<').replace(/&gt;/gi,'>')
+  .replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'")
+  .replace(/[ \t]+/g,' ').replace(/ *\n */g,'\n').replace(/\n{3,}/g,'\n\n')
+  .trim().slice(0,16000)
+}
 /** Shopify sends image objects with src fields and sometimes protocol-relative URLs. */
 export function sourceImages(product) {
+ const html=String(product?.body_html||'')
+ const embedded=[...html.matchAll(/<img\b[^>]*\b(?:data-src|src)\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1])
  const candidates=[product?.image,...(Array.isArray(product?.images)?product.images:[]),
-   ...(Array.isArray(product?.variants)?product.variants.map(v=>v?.featured_image):[])]
+   ...(Array.isArray(product?.variants)?product.variants.map(v=>v?.featured_image):[]),...embedded]
  const unique=new Set()
  for(const entry of candidates){
   const value=typeof entry==='string'?entry:entry?.src
@@ -74,11 +92,23 @@ export async function previewFromCatalog(products) {
   const photos=sourceImages(item)
   const capacity=title.match(/\d[\d,.]*\s*mAh/i)?.[0]||''
   const wattage=title.match(/\d{1,3}\s*W\b/i)?.[0]||''
+  const description=sourceDescription(item.body_html)
+  const options=(Array.isArray(item.options)?item.options:[]).map(o=>({
+   name:String(o.name||'').slice(0,90),values:(Array.isArray(o.values)?o.values:[]).map(v=>String(v).slice(0,160))
+  }))
+  const variants=(Array.isArray(item.variants)?item.variants:[]).map(v=>({
+   id:String(v.id||''),sku:String(v.sku||'').slice(0,120),
+   title:String(v.title||'').slice(0,160),option1:String(v.option1||''),
+   option2:String(v.option2||''),option3:String(v.option3||'')
+  }))
   records.push({
-   id:key.id,slug:key.slug,name:title,category,
+   id:key.id,slug:key.slug,name:title,category,source_market:'global',
    price:0,old_price:0,stock:0,published:1,featured:category!=='other'?1:0,
-   badge:'Danh mục tham khảo',
-   description:'Mặt hàng trong danh mục công khai CUKTECH. Giá bán và tồn kho Việt Nam đang được cập nhật.',
+   badge:'Danh mục cuktech.com',
+   description:description||'Trang nguồn chưa cung cấp mô tả sản phẩm.',
+   source_description:description,source_product_type:String(item.product_type||'').slice(0,120),
+   source_tags:Array.isArray(item.tags)?item.tags.join(', '):String(item.tags||''),
+   source_options:options,source_variants:variants,
    art:category==='cable'?'cable':category==='charger'?'charger':'powerbank',
    capacity,wattage,source_model_codes:sourceModelCodes(item),
    source_site:key.sourceUrl,image_url:photos[0]||'',source_images:JSON.stringify(photos)
@@ -96,7 +126,8 @@ export async function buildSnapshot({fetchImpl=fetch,delay}={}){
  const productsWithImages=products.filter(p=>p.image_url).length
  const totalImages=products.reduce((n,p)=>n+JSON.parse(p.source_images).length,0)
  return {source:'https://cuktech.com/collections/all',sourceCount:scan.sourceCount,verified:true,
-  productsWithImages,totalImages,generatedAt:new Date().toISOString(),products}
+  productsWithImages,totalImages,productsWithDescription:products.filter(p=>p.source_description).length,
+  generatedAt:new Date().toISOString(),products}
 }
 if(process.argv[1] && fileURLToPath(import.meta.url)===resolve(process.argv[1])){
  buildSnapshot().then(async data=>{
