@@ -11,7 +11,7 @@
     "dev:api": "node --env-file-if-exists=.env --watch server/index.js",
     "build": "vite build",
     "start": "node --env-file-if-exists=.env server/index.js",
-    "check": "node --check server/index.js && node --check server/db.js && node --check server/catalog-sync.js && node --check server/sync-cli.js && node --check server/store-policy.js && node --check server/order-export.js && node --check worker/src/helpers.js && node --check worker/src/index.js && node --check worker/src/sync.js && node --check worker/src/catalog-core.js && node --check scripts/build-china-catalog.js && node --check scripts/cache-china-media.js && node --check scripts/match-global-photos.js && node --check scripts/enrich-global-models.js",
+    "check": "node --check server/index.js && node --check server/db.js && node --check server/catalog-sync.js && node --check server/sync-cli.js && node --check server/store-policy.js && node --check server/order-export.js && node --check worker/src/helpers.js && node --check worker/src/index.js && node --check worker/src/sync.js && node --check worker/src/catalog-core.js && node --check scripts/build-china-catalog.js && node --check scripts/cache-china-media.js && node --check scripts/match-global-photos.js && node --check scripts/enrich-global-models.js && node --check scripts/mirror-shopify-photos.js",
     "sync:products": "node --env-file-if-exists=.env server/sync-cli.js",
     "test": "node --test",
     "deploy:worker": "npx wrangler@4 deploy --config worker/wrangler.toml"

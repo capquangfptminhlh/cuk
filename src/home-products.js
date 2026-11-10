@@ -15,6 +15,12 @@ export function productPhotos(product) {
  const photos = new Set()
  for (const source of sources) {
   if (typeof source !== 'string' || !source.trim()) continue
+  // Vite copies public/media into the static website; relative paths work on
+  // both cuktech.vn/ and the /cuk/ GitHub Pages preview.
+  if (/^media\/products\/[a-f0-9]{32}\.webp$/i.test(source)) {
+   photos.add(source)
+   continue
+  }
   try {
    const url = new URL(source)
    const allowedHost = ['cdn.shopify.com', 'cuktech.com', 'www.cuktech.com'].includes(url.hostname.toLowerCase())
