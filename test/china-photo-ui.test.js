@@ -20,7 +20,8 @@ test('Manufacturer details link to official product photos when direct photos ca
  assert.match(storefront,/function DetailPhoto\(/)
  assert.match(storefront,/Xem ảnh thật trên website chính hãng/)
  assert.match(storefront,/href=\{source_site\}/)
- assert.match(storefront,/Ảnh từ nguồn có thể bị chặn tải trực tiếp/)
+ assert.match(storefront,/Nguồn sản phẩm:/)
+ assert.match(storefront,/Xem ảnh thật tại cuktech\.com/)
  assert.match(storefront,/Album ảnh nguồn Trung Quốc có thể bị giới hạn truy cập/)
 })
 test('The storefront keeps real photos for global catalog while China images are audited separately',()=>{
