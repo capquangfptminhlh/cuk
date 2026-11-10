@@ -31,29 +31,33 @@ function StoreProvider({children}){
  const [products,setProducts]=useState([]),[demo,setDemo]=useState(true),[checkoutEnabled,setCheckoutEnabled]=useState(false),[loading,setLoading]=useState(true)
  const [cart,setCart]=useState(()=>{try{return JSON.parse(localStorage.getItem('cuktech-cart')||'[]')}catch{return[]}})
  const [drawer,setDrawer]=useState(false),[searchOpen,setSearchOpen]=useState(false)
- const reload=async()=>{
- const [snapshot,china,live]=await Promise.allSettled([
-  fetch('catalog.snapshot.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('No global catalog snapshot');return r.json()}),
-  fetch('catalog.china.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('No Chinese manufacturer snapshot');return r.json()}),
+ // The live storefront is an exact public cuktech.com catalog. Keep the separate
+// China-only research feed out of the storefront: 88 additional China models
+// are not part of the 40 products actually listed on cuktech.com.
+const reload=async()=>{
+ const [snapshot,live]=await Promise.allSettled([
+  fetch('catalog.snapshot.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('Không tải được danh mục cuktech.com');return r.json()}),
   api('/api/products')
  ])
- const verified=snapshot.status==='fulfilled'&&snapshot.value?.verified===true&&
-   Number(snapshot.value.sourceCount)===snapshot.value.products?.length
- const globalCatalog=verified?snapshot.value.products.map(p=>({...p,source_market:'global'})):[]
- const cnVerified=china.status==='fulfilled'&&Number(china.value?.discovered)>=40&&
-   china.value.products?.length===china.value.discovered&&
-   new Set(china.value.products.map(p=>p.id)).size===china.value.discovered
- const chinaCatalog=cnVerified?china.value.products:[]
+ const source=snapshot.status==='fulfilled'?snapshot.value:null
+ const verified=source?.verified===true&&
+  Number(source.sourceCount)>0&&Number(source.sourceCount)===source.products?.length&&
+  new Set(source.products.map(p=>p.slug)).size===source.products.length
+ if(!verified){setProducts([]);return}
  const apiProducts=live.status==='fulfilled'&&Array.isArray(live.value)?live.value:[]
- const bySlug=new Map([...globalCatalog,...chinaCatalog].map(p=>[p.slug,p]))
- for(const p of apiProducts){
-  if(bySlug.size&&String(p.id).startsWith('demo-')&&Number(p.price)===0)continue
-  // Keep the complete public picture gallery when the D1 product record lacks one.
-  const old=bySlug.get(p.slug)
-  bySlug.set(p.slug,old?{...old,...p,image_url:p.image_url||old.image_url,
-   source_images:p.source_images&&p.source_images!=='[]'?p.source_images:old.source_images}:p)
- }
- setProducts(bySlug.size?[...bySlug.values()]:FALLBACK_PRODUCTS)
+ const local=new Map(apiProducts.map(p=>[p.slug,p]))
+ // Source holds the exact products and full images/descriptions. Admin can
+ // override only selling price/stock for an identical SKU after verification.
+ setProducts(source.products.map(p=>{
+  const admin=local.get(p.slug)
+  if(!admin)return {...p,source_market:'global'}
+  return {...p,source_market:'global',
+   price:Number.isInteger(admin.price)&&admin.price>0?admin.price:p.price,
+   old_price:Number.isInteger(admin.old_price)?admin.old_price:p.old_price,
+   stock:Number.isInteger(admin.stock)&&admin.stock>=0?admin.stock:p.stock,
+   published:admin.published
+  }
+ }))
 }
  useEffect(()=>{Promise.allSettled([reload(),api('/api/config').then(c=>{setDemo(c.demo);setCheckoutEnabled(c.checkoutEnabled===true)})]).finally(()=>setLoading(false))},[])
  useEffect(()=>localStorage.setItem('cuktech-cart',JSON.stringify(cart)),[cart])
@@ -116,7 +120,7 @@ function Home(){const {products,loading}=useStore();const featured=products.filt
  <section className="section content-wrap"><SectionTitle eyebrow="MỞ RA KHẢ NĂNG MỚI" title="Sạc nhanh GaN" to="/shop?category=charger"/><div className="product-grid">{products.filter(p=>p.category==='charger').slice(0,4).map(p=><ProductCard key={p.id} product={p}/>)}</div></section><TrustStrip/><Newsletter/></main>}
 function TrustStrip(){return <section className="trust-strip"><div className="content-wrap trust-inner"><div><Zap/><strong>Công nghệ sạc nhanh</strong><span>Hiệu năng tối ưu cho thiết bị tương thích</span></div><div><ShieldCheck/><strong>Thông tin minh bạch</strong><span>Kiểm tra thông số trước khi mua</span></div><div><Truck/><strong>Hỗ trợ giao hàng</strong><span>Xác nhận phí và thời gian sau khi đặt</span></div><div><Headphones/><strong>Hỗ trợ đơn hàng</strong><span>Liên hệ cửa hàng để được tư vấn</span></div></div></section>}
 function Newsletter(){const [email,setEmail]=useState(''),[message,setMessage]=useState('');const submit=async e=>{e.preventDefault();try{await api('/api/newsletter',{method:'POST',body:JSON.stringify({email})});setMessage('Cảm ơn bạn đã đăng ký!');setEmail('')}catch(e){setMessage(e.message)}};return <section className="newsletter"><div className="content-wrap newsletter-inner"><div><span className="overline">LUÔN ĐI TRƯỚC MỘT BƯỚC</span><h2>Đừng bỏ lỡ điều mới.</h2><p>Cập nhật dòng sản phẩm và thông tin ưu đãi từ cửa hàng.</p></div><form onSubmit={submit}><div className="newsletter-input"><Mail size={20}/><input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="Nhập email của bạn"/><button type="submit">Đăng ký <ArrowRight size={18}/></button></div>{message&&<small role="status">{message}</small>}</form></div></section>}
-function Catalog(){const {products}=useStore(),loc=useLocation(),nav=useNavigate();const params=new URLSearchParams(loc.search),cat=params.get('category')||'all',q=params.get('q')||'',sort=params.get('sort')||'featured';const [query,setQuery]=useState(q);useEffect(()=>setQuery(q),[q]);const source=params.get('source')||'all';const page=1,perPage=1000;const filtered=useMemo(()=>{let a=products.filter(p=>(cat==='all'||p.category===cat)&&(source==='all'||p.source_market===source)&&(p.name+' '+(p.source_original_title||'')).toLocaleLowerCase('vi').includes(q.toLocaleLowerCase('vi')));return a.sort((a,b)=>sort==='price-asc'?a.price-b.price:sort==='price-desc'?b.price-a.price:sort==='name'?a.name.localeCompare(b.name):b.featured-a.featured)},[products,cat,source,q,sort]);const pages=Math.max(1,Math.ceil(filtered.length/perPage)),currentPage=Math.min(page,pages),pageProducts=filtered.slice((currentPage-1)*perPage,currentPage*perPage);const edit=(key,value)=>{const p=new URLSearchParams(loc.search);if(key!=='page')p.delete('page');value?p.set(key,value):p.delete(key);nav('/shop'+(p.toString()?'?'+p.toString():''))};return <main><div className="catalog-hero"><div className="content-wrap"><span className="overline">CUKTECH / COLLECTIONS</span><h1>{cat==='all'?'Tất cả sản phẩm':categoryName(cat)}</h1><p>Thiết kế để tiếp năng lượng cho mọi khoảnh khắc.</p></div></div><div className="content-wrap catalog-main"><div className="catalog-toolbar"><span>{filtered.length} sản phẩm</span><div className="toolbar-actions"><div className="catalog-search"><Search size={17}/><input value={query} placeholder="Tìm sản phẩm..." onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')edit('q',query)}}/><button onClick={()=>edit('q',query)} aria-label="Tìm"><ArrowRight size={16}/></button></div><label><SlidersHorizontal size={17}/><select value={sort} onChange={e=>edit('sort',e.target.value)}><option value="featured">Nổi bật</option><option value="price-asc">Giá thấp đến cao</option><option value="price-desc">Giá cao đến thấp</option><option value="name">Tên A–Z</option></select></label></div></div>{source==='china'&&<p className="china-gallery-disclaimer">Ảnh CUKTECH Trung Quốc được liên kết từ nguồn chính hãng, một số ảnh có thể bị chặn khi mở tại Việt Nam. Mỗi sản phẩm có đường dẫn xem ảnh trên website của hãng.</p>}<div className="source-tabs" role="group" aria-label="Nguồn sản phẩm"><button className={source==='all'?'active':''} onClick={()=>edit('source','')}>Tất cả nguồn ({products.length})</button><button className={source==='global'?'active':''} onClick={()=>edit('source','global')}>Quốc tế ({products.filter(p=>p.source_market==='global').length})</button><button className={source==='china'?'active':''} onClick={()=>edit('source','china')}>Trung Quốc ({products.filter(p=>p.source_market==='china').length})</button></div><div className="category-tabs">{categories.map(c=><button key={c.id} className={cat===c.id?'active':''} onClick={()=>edit('category',c.id==='all'?'':c.id)}>{c.label}</button>)}</div>{filtered.length?<div className="product-grid catalog-grid">{pageProducts.map(p=><ProductCard key={p.id} product={p}/>)}</div>:<div className="no-results">Không có sản phẩm phù hợp. <button onClick={()=>nav('/shop')}>Xem tất cả</button></div>}{pages>1&&<nav className="pagination" aria-label="Phân trang sản phẩm"><button disabled={currentPage===1} onClick={()=>edit('page',String(currentPage-1))}>‹ Trang trước</button><span>Trang {currentPage} / {pages}</span><button disabled={currentPage===pages} onClick={()=>edit('page',String(currentPage+1))}>Trang sau ›</button></nav>}</div><Newsletter/></main>}
+function Catalog(){const {products}=useStore(),loc=useLocation(),nav=useNavigate();const params=new URLSearchParams(loc.search),cat=params.get('category')||'all',q=params.get('q')||'',sort=params.get('sort')||'featured';const [query,setQuery]=useState(q);useEffect(()=>setQuery(q),[q]);const page=1,perPage=1000;const filtered=useMemo(()=>{let a=products.filter(p=>(cat==='all'||p.category===cat)&&(p.name+' '+(p.source_description||'')+' '+(p.source_model_codes||[]).join(' ')).toLocaleLowerCase('vi').includes(q.toLocaleLowerCase('vi')));return a.sort((a,b)=>sort==='price-asc'?a.price-b.price:sort==='price-desc'?b.price-a.price:sort==='name'?a.name.localeCompare(b.name):b.featured-a.featured)},[products,cat,q,sort]);const pages=Math.max(1,Math.ceil(filtered.length/perPage)),currentPage=Math.min(page,pages),pageProducts=filtered.slice((currentPage-1)*perPage,currentPage*perPage);const edit=(key,value)=>{const p=new URLSearchParams(loc.search);if(key!=='page')p.delete('page');value?p.set(key,value):p.delete(key);nav('/shop'+(p.toString()?'?'+p.toString():''))};return <main><div className="catalog-hero"><div className="content-wrap"><span className="overline">CUKTECH.COM / OFFICIAL PRODUCT CATALOG</span><h1>{cat==='all'?'Sản phẩm CUKTECH':categoryName(cat)}</h1><p>Danh mục sản phẩm và ảnh thật từ cuktech.com, không lẫn mẫu từ thị trường khác.</p></div></div><div className="content-wrap catalog-main"><div className="catalog-toolbar"><span>{filtered.length} sản phẩm</span><div className="toolbar-actions"><div className="catalog-search"><Search size={17}/><input value={query} placeholder="Tìm sản phẩm..." onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')edit('q',query)}}/><button onClick={()=>edit('q',query)} aria-label="Tìm"><ArrowRight size={16}/></button></div><label><SlidersHorizontal size={17}/><select value={sort} onChange={e=>edit('sort',e.target.value)}><option value="featured">Nổi bật</option><option value="price-asc">Giá thấp đến cao</option><option value="price-desc">Giá cao đến thấp</option><option value="name">Tên A–Z</option></select></label></div></div><p className="catalog-origin-notice">Danh mục chính thức từ <a href="https://cuktech.com/collections/all" target="_blank" rel="noopener noreferrer">cuktech.com</a>. Toàn bộ sản phẩm công khai, album ảnh và mô tả gốc được đồng bộ; giá và tồn kho Việt Nam sẽ được xác nhận riêng.</p><div className="category-tabs">{categories.map(c=><button key={c.id} className={cat===c.id?'active':''} onClick={()=>edit('category',c.id==='all'?'':c.id)}>{c.label}</button>)}</div>{filtered.length?<div className="product-grid catalog-grid">{pageProducts.map(p=><ProductCard key={p.id} product={p}/>)}</div>:<div className="no-results">Không có sản phẩm phù hợp. <button onClick={()=>nav('/shop')}>Xem tất cả</button></div>}{pages>1&&<nav className="pagination" aria-label="Phân trang sản phẩm"><button disabled={currentPage===1} onClick={()=>edit('page',String(currentPage-1))}>‹ Trang trước</button><span>Trang {currentPage} / {pages}</span><button disabled={currentPage===pages} onClick={()=>edit('page',String(currentPage+1))}>Trang sau ›</button></nav>}</div><Newsletter/></main>}
 function DetailPhoto({src,name,art,source_market='',source_site=''}) {
  const [failed,setFailed]=useState(false)
  useEffect(()=>setFailed(false),[src])
