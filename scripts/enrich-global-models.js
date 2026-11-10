@@ -41,7 +41,7 @@ export async function enrichCatalogModels({
  if(!robotResponse.ok)throw new Error('Cannot inspect public source robots policy')
  const robots=await robotResponse.text()
  const rows=[]
- let checked=0,found=0,conflicts=0,missing=0
+ let checked=0,found=0,conflicts=0,missing=0,accessBlocked=false
  for(const product of catalog.products.slice(0,maxPages)) {
   if(!product.source_site || isSpecial(product.name))continue
   const url=new URL(product.source_site)
@@ -57,7 +57,11 @@ export async function enrichCatalogModels({
     'User-Agent':USER_AGENT
    },signal:AbortSignal.timeout(20000),redirect:'follow'})
   }catch(e){rows.push({product:product.name,reason:'fetch-error'});missing++;continue}
-  if([403,429].includes(response.status))throw new Error('International manufacturer declined requests: HTTP '+response.status)
+  if([403,429].includes(response.status)){
+   rows.push({product:product.name,reason:'source-blocked',status:response.status})
+   accessBlocked=true
+   break // Stop scraping; keep existing verified JSON catalog, never bypass restrictions.
+  }
   if(!response.ok || new URL(response.url||url.href).origin!==BASE){rows.push({product:product.name,reason:'http-'+response.status});missing++;continue}
   checked++
   const detected=publicModelFromHtml(await response.text())
@@ -68,7 +72,7 @@ export async function enrichCatalogModels({
   product.spec_model_source='cuktech.com-public-spec'
   found++
  }
- catalog.modelSpecAudit={checked,found,missing,conflicts,nonmatching:rows,
+ catalog.modelSpecAudit={checked,found,missing,conflicts,accessBlocked,nonmatching:rows,
   checkedAt:new Date().toISOString()}
  await writeFile(resolve(filename),JSON.stringify(catalog,null,2)+'\n')
  return catalog.modelSpecAudit
