@@ -18,12 +18,19 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Restore manufacturer's image cache
+        uses: actions/cache@v4
+        with:
+          path: .image-cache/cn
+          key: cuktech-cn-media-${{ github.run_id }}
+          restore-keys: |
+            cuktech-cn-media-
       - name: Build website for cuktech.vn
         env:
           VITE_API_BASE_URL: https://api.cuktech.vn
@@ -31,6 +38,7 @@ jobs:
           npm install --no-audit --no-fund
           node scripts/build-catalog-preview.js
           node scripts/build-china-catalog.js
+          node scripts/cache-china-media.js
           npm run build
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
