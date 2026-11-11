@@ -47,6 +47,7 @@ jobs:
           node --input-type=module -e "import {readFileSync,existsSync} from 'node:fs';const d=JSON.parse(readFileSync('dist/catalog.snapshot.json'));if(d.mediaAudit?.coveredProducts!==d.sourceCount)throw Error('Missing product covers');for(const p of d.products){if(!p.image_url.startsWith('media/products/')||!existsSync('dist/'+p.image_url))throw Error('Image not present in static Pages artifact: '+p.name)}console.log('STATIC PHOTO QA PASS:',d.mediaAudit.coveredProducts,'product covers and',d.mediaAudit.cachedImages,'WebP files')"
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
+          printf '{"commit":"%s"}\n' "$GITHUB_SHA" > dist/build.json
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
@@ -63,3 +64,9 @@ jobs:
       - name: Deploy static storefront
         id: deployment
         uses: actions/deploy-pages@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify live cuktech.vn and real product WebP responses
+        run: node scripts/check-live-site.js
