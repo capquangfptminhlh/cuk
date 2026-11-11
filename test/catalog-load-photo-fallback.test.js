@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {
- staticAssetUrl,safePhotoUrl,photoCandidates,checkedSnapshot,loadStaticCatalog
+ staticAssetUrl,safePhotoUrl,photoCandidates,checkedSnapshot,loadStaticCatalog,retriedPhotoUrl
 } from '../src/catalog-assets.js'
 
 const HASH='abcdef0123456789abcdef0123456789'
@@ -72,4 +72,13 @@ test('11 verified local product photos are 11 gallery entries, not 22 repeated w
  assert.equal(result.length,11)
  assert.deepEqual(result,photos.map(photo=>new URL(photo,preview).href))
  assert.ok(result.every(src=>src.startsWith(preview+'media/products/')))
+})
+
+test('Retrying a genuine photo makes exactly one fresh HTTPS request without changing product identity',()=>{
+ const localImage=staticAssetUrl(local,'https://cuktech.vn/')
+ const retry=retriedPhotoUrl(localImage,1)
+ assert.equal(retry,localImage+'?cuktech_photo_retry=1')
+ assert.equal(retriedPhotoUrl(localImage,0),localImage)
+ assert.equal(retriedPhotoUrl(cdn,1),cdn+'&cuktech_photo_retry=1')
+ assert.throws(()=>retriedPhotoUrl('javascript:alert(1)',1),/HTTPS/)
 })
