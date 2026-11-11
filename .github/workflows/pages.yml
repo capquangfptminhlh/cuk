@@ -70,3 +70,16 @@ jobs:
           node-version: '22'
       - name: Verify live cuktech.vn and real product WebP responses
         run: node scripts/check-live-site.js
+      - name: Install headless Chromium for real browser visual QA
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Verify desktop/mobile homepage and product images in Chromium
+        run: node scripts/browser-photo-qa.js
+      - name: Upload image QA screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuktech-photo-browser-qa
+          path: qa-screenshots/
+          if-no-files-found: ignore
