@@ -13,7 +13,7 @@ test('All manufacturer image views retry once before falling back to another pho
  assert.match(main,/onError=\{\(\)=>setAttempt\(n=>n\+1\)\}/)
  assert.match(main,/src=\{retriedPhotoUrl\(gallery\[fallbackIndex\],imageState\.retry\)\}/)
  assert.match(main,/src=\{retriedPhotoUrl\(image,imageState\.retry\)\}/)
- assert.match(main,/gallery-image-unavailable-thumb/)
+ assert.match(main,/gallery-image-unavailable-'.mode/)
  assert.match(main,/mode="full" source_site=\{product\.source_site\}/)
  assert.doesNotMatch(main,/e\.currentTarget\.closest\('button'\)\.style\.display='none'/)
 })
