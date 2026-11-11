@@ -31,14 +31,19 @@ function photosFromField(field) {
   return Array.isArray(a)?a:[]
  }catch{return []}
 }
-/** First-party images always have priority; Shopify originals are a fallback
- * only for THE SAME source product if an image is missing from a stale CDN edge.
+/** Do not mix the locally mirrored gallery with the original CDN gallery.
+ * Both sets represent the exact SAME photos, and mixing doubled every album
+ * (e.g. 11 original product pictures became 22 images on the detail page).
+ * When any verified local asset is available, use ONLY the source's local
+ * gallery. Remote originals are a compatibility fallback for a catalog
+ * snapshot which has not yet been mirrored at all.
  */
 export function photoCandidates(product,base) {
  if(!product)return []
- const sources=[
-  product.image_url,
-  ...photosFromField(product.source_images),
+ const primary=[product.image_url,...photosFromField(product.source_images)]
+ const local=primary.filter(src=>typeof src==='string'&&LOCAL.test(src))
+ const sources=local.length?local:[
+  ...primary,
   product.original_image_url,
   ...photosFromField(product.original_source_images)
  ]

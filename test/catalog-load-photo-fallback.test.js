@@ -28,11 +28,12 @@ test('Photo URL is root-safe on the custom domain and repository-safe on the Git
  assert.equal(safePhotoUrl('https://evil.example/test.webp',root),null)
  assert.throws(()=>staticAssetUrl('../../admin',root))
 })
-test('Image candidates start with local WebP and fall back only to same SKU original Shopify URL',()=>{
+test('A mirrored local gallery excludes duplicate original Shopify CDN links',()=>{
  const list=photoCandidates(product,'https://cuktech.vn/')
- assert.deepEqual(list,['https://cuktech.vn/'+local,cdn])
+ assert.deepEqual(list,['https://cuktech.vn/'+local])
  assert.deepEqual(photoCandidates({...product,source_images:'corrupt'} ,'https://cuktech.vn/'),list)
- assert.deepEqual(photoCandidates({...product,original_image_url:'https://evil.example/123.jpg'} ,'https://cuktech.vn/'),['https://cuktech.vn/'+local,cdn])
+ assert.deepEqual(photoCandidates({...product,original_image_url:'https://evil.example/123.jpg'} ,'https://cuktech.vn/'),list)
+ // Unmirrored legacy source snapshots can still display their real CDN photos.
  assert.deepEqual(photoCandidates({...product,image_url:'',source_images:'[]',original_image_url:''},'https://cuktech.vn/'),[cdn])
 })
 test('Static storefront loads source catalog without waiting for any offline API endpoint',async()=>{
@@ -57,4 +58,18 @@ test('Incomplete or invalid source is rejected instead of fabricating placeholde
  assert.throws(()=>checkedSnapshot({verified:true,sourceCount:2,products:[product]}),/missing or incomplete/)
  assert.throws(()=>checkedSnapshot({verified:false,sourceCount:1,products:[product]}),/missing or incomplete/)
  assert.throws(()=>checkedSnapshot({verified:true,sourceCount:2,products:[product,product]}),/missing or incomplete/)
+})
+
+test('11 verified local product photos are 11 gallery entries, not 22 repeated with Shopify originals',()=>{
+ const photos=Array.from({length:11},(_,i)=>'media/products/'+i.toString(16).padStart(32,'0')+'.webp')
+ const originals=Array.from({length:11},(_,i)=>'https://cdn.shopify.com/s/files/'+i+'.jpg?v=11')
+ const preview='https://capquangfptminhlh.github.io/cuk/'
+ const p={
+  image_url:photos[0],source_images:JSON.stringify(photos),
+  original_image_url:originals[0],original_source_images:JSON.stringify(originals)
+ }
+ const result=photoCandidates(p,preview)
+ assert.equal(result.length,11)
+ assert.deepEqual(result,photos.map(photo=>new URL(photo,preview).href))
+ assert.ok(result.every(src=>src.startsWith(preview+'media/products/')))
 })
