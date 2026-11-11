@@ -85,7 +85,10 @@ const reload=async()=>{
  const value={products,loading,demo,checkoutEnabled,cart,drawer,setDrawer,searchOpen,setSearchOpen,add,qty,detailed,total,reload,clearCart:()=>setCart([])}
  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
-function ProductArt({art='powerbank',dark=false,large=false,image_url='',source_market='',name=''}) {
+function ProductArt({art='powerbank',dark=false,large=false,image_url='',source_market='',name='',source_images='',original_image_url='',original_source_images=''}) {
+ const gallery=useMemo(()=>photoCandidates({image_url,source_images,original_image_url,original_source_images}),[image_url,source_images,original_image_url,original_source_images])
+ const [fallbackIndex,setFallbackIndex]=useState(0)
+ useEffect(()=>setFallbackIndex(0),[image_url,source_images,original_image_url,original_source_images])
  const [photoFailed,setPhotoFailed]=useState(false)
  useEffect(()=>setPhotoFailed(false),[image_url])
  const isChina=source_market==='china'
@@ -101,8 +104,8 @@ function ProductArt({art='powerbank',dark=false,large=false,image_url='',source_
   </div>}
  </div>
  if(source_market==='global')return <div className={'manufacturer-photo '+(large?'manufacturer-photo-large':'')}>
-  {image_url&&!photoFailed&&<img className="catalog-photo manufacturer-image" src={image_url} alt={'Ảnh thật '+name+' từ cuktech.com'} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={()=>setPhotoFailed(true)}/>}
-  {(!image_url||photoFailed)&&<div className="manufacturer-photo-missing">
+  {gallery[fallbackIndex]&&<img className="catalog-photo manufacturer-image" src={gallery[fallbackIndex]} alt={'Ảnh thật '+name+' từ cuktech.com'} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={()=>setFallbackIndex(i=>i+1)}/>}
+  {!gallery[fallbackIndex]&&<div className="manufacturer-photo-missing">
    <ImageOff size={large?40:31} strokeWidth={1.5}/>
    <strong>Ảnh sản phẩm đang cập nhật</strong>
    <span>{name||'CUKTECH'}</span>
@@ -175,7 +178,7 @@ function Hero({product,loading}) {
  </section>
 }
 function SectionTitle({eyebrow,title,description,to='/shop'}){return <div className="section-heading"><div><span className="overline">{eyebrow}</span><h2>{title}</h2>{description&&<p>{description}</p>}</div><Link className="underlined-link" to={to}>Xem tất cả <ArrowUpRight size={16}/></Link></div>}
-function ProductCard({product}){const {add}=useStore();return <div className="product-card"><Link className="product-visual" to={'/product/'+product.slug}>{product.badge&&<span className="product-badge">{product.badge}</span>}<ProductArt art={product.art} image_url={product.image_url} name={product.name} source_market={product.source_market}/><span className="quick-view">Xem chi tiết <ArrowUpRight size={15}/></span></Link><div className="product-meta"><span className="category-kicker">{categoryName(product.category)}</span><Link to={'/product/'+product.slug}><h3>{product.name}</h3></Link><div className="product-specs">{product.capacity} {product.capacity&&product.wattage?' · ':''}{product.wattage}</div><div className="product-price"><strong>{product.price>0?vn(product.price):'Liên hệ'}</strong>{product.old_price>product.price&&<del>{vn(product.old_price)}</del>}</div><button disabled={product.stock<=0||product.price<=0} className="add-card" aria-label={'Thêm '+product.name+' vào giỏ'} onClick={()=>add(product)}><Plus size={21}/></button></div></div>}
+function ProductCard({product}){const {add}=useStore();return <div className="product-card"><Link className="product-visual" to={'/product/'+product.slug}>{product.badge&&<span className="product-badge">{product.badge}</span>}<ProductArt art={product.art} image_url={product.image_url} source_images={product.source_images} original_image_url={product.original_image_url} original_source_images={product.original_source_images} name={product.name} source_market={product.source_market}/><span className="quick-view">Xem chi tiết <ArrowUpRight size={15}/></span></Link><div className="product-meta"><span className="category-kicker">{categoryName(product.category)}</span><Link to={'/product/'+product.slug}><h3>{product.name}</h3></Link><div className="product-specs">{product.capacity} {product.capacity&&product.wattage?' · ':''}{product.wattage}</div><div className="product-price"><strong>{product.price>0?vn(product.price):'Liên hệ'}</strong>{product.old_price>product.price&&<del>{vn(product.old_price)}</del>}</div><button disabled={product.stock<=0||product.price<=0} className="add-card" aria-label={'Thêm '+product.name+' vào giỏ'} onClick={()=>add(product)}><Plus size={21}/></button></div></div>}
 function Home(){
  const {products,loading}=useStore()
  const {hero,split,categoryCards,featured,chargers}=useMemo(()=>pickHomepageProducts(products),[products])
