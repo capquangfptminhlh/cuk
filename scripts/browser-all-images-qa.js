@@ -14,7 +14,8 @@ const BASE=new URL(process.env.CUKTECH_SITE_URL||'https://cuktech.vn/')
 const OUT='qa-screenshots'
 const issues=[]
 const report={site:BASE.href,sourceProducts:0,uniqueImages:0,decodedImages:0,
-  checkedProductPages:0,checkedThumbnails:0,mobileProducts:0,issues}
+  checkedProductPages:0,checkedThumbnails:0,mobileProducts:0,
+  firstPassDecodeFailures:0,retriesRecovered:0,issues}
 const add=(kind,data)=>issues.push({kind,...data})
 const distinct=a=>[...new Set(a)]
 const localPattern=/^media\/products\/[a-f0-9]{32}\.webp$/
@@ -96,30 +97,50 @@ async function decodeAllAssets(products){
   // Executed in the real browser: checks each photo's actual decode after
   // loading it, rather than confusing offscreen loading=lazy with failures.
   const result=await page.evaluate(async urls=>{
-   let index=0,success=0
+   let index=0,success=0,firstPassFailures=0,recovered=0
    const bad=[]
+   async function decode(relative,attempt){
+    const url=new URL(relative,document.baseURI)
+    if(attempt)url.searchParams.set('cuktech_photo_retry',String(attempt))
+    const img=new Image()
+    img.decoding='async'
+    img.src=url.href
+    try{
+     await Promise.race([
+      img.decode(),
+      new Promise((_,reject)=>setTimeout(()=>reject(Error('image decode timeout')),18000))
+     ])
+     if(img.naturalWidth<=0||img.naturalHeight<=0)throw Error('zero image dimensions')
+     return true
+    }finally{img.src=''}
+   }
    async function worker(){
     while(index<urls.length){
      const relative=urls[index++]
-     const url=new URL(relative,document.baseURI)
-     const img=new Image()
-     img.decoding='async'
-     img.src=url.href
      try{
-      await Promise.race([
-       img.decode(),
-       new Promise((_,reject)=>setTimeout(()=>reject(Error('image decode timeout')),18000))
-      ])
-      if(img.naturalWidth<=0||img.naturalHeight<=0)throw Error('zero image dimensions')
+      await decode(relative,0)
       success++
-     }catch(e){bad.push({path:relative,message:String(e.message)})}
-     img.src=''
+     }catch(e){
+      firstPassFailures++
+      // A transient browser/network failure must be tried again using
+      // the same real source photo, at a modest request rate.
+      await new Promise(resolve=>setTimeout(resolve,160))
+      try{
+       await decode(relative,1)
+       success++
+       recovered++
+      }catch(error){bad.push({path:relative,message:String(error.message)})}
+     }
     }
    }
-   await Promise.all(Array.from({length:8},worker))
-   return {success,bad}
+   // Do not artificially pressure mobile-class decoders with 8 full-resolution
+   // images at once. On a real shop, photos are lazy-loaded as users scroll.
+   await Promise.all(Array.from({length:2},worker))
+   return {success,bad,firstPassFailures,recovered}
   },urlList)
   report.decodedImages=result.success
+  report.firstPassDecodeFailures=result.firstPassFailures
+  report.retriesRecovered=result.recovered
   result.bad.forEach(x=>add('undecodable-public-webp',x))
  }catch(e){add('bulk-image-decode-error',{message:e.message})}
  finally{await page.close()}

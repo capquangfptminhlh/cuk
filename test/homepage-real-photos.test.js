@@ -59,6 +59,7 @@ test('All homepage merchandising slots use actual source product photography, no
  assert.match(home,/featured\.map\(p=><ProductCard/)
  assert.doesNotMatch(hero,/<ProductArt\b|<div className="device/)
  assert.doesNotMatch(home,/<ProductArt\b|<div className="device/)
- assert.match(code,/onError=\{\(\)=>setPhotoIndex\(i=>i\+1\)\}/)
+ assert.match(code,/onError=\{onHeroImageError\}/)
+ assert.match(code,/retriedPhotoUrl\(image,imageState\.retry\)/)
  assert.match(code,/Không sử dụng ảnh hoặc sản phẩm minh họa/)
 })

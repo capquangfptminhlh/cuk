@@ -68,3 +68,14 @@ export async function loadStaticCatalog({fetchImpl=fetch,base}={}) {
  if(!response.ok)throw new Error('Catalog HTTP '+response.status)
  return checkedSnapshot(await response.json())
 }
+
+/** Retry a failed photo once with a fresh CDN request. Only call on already
+ * validated source URLs (photoCandidates returns absolute HTTPS).
+ */
+export function retriedPhotoUrl(source,attempt=0) {
+ if(!source||!attempt)return source
+ const url=new URL(source)
+ if(url.protocol!=='https:')throw new Error('Photo retry accepts HTTPS sources only')
+ url.searchParams.set('cuktech_photo_retry',String(Math.min(2,Math.max(1,attempt))))
+ return url.href
+}

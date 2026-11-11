@@ -75,6 +75,9 @@ jobs:
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
           npx playwright install --with-deps chromium
+      - name: Audit all public product WebP bytes independently of the browser
+        timeout-minutes: 10
+        run: node scripts/verify-media-origin.js
       - name: Verify desktop/mobile homepage and product images in Chromium
         run: node scripts/browser-photo-qa.js
       - name: Audit all 40 product detail pages and 274 real WebP images
