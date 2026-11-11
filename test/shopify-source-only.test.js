@@ -7,10 +7,11 @@ const workflow=readFileSync(new URL('../.github/workflows/pages.yml',import.meta
 const source=readFileSync(new URL('../scripts/build-catalog-preview.js',import.meta.url),'utf8')
 
 test('Storefront does not mix China-exclusive models with the 40 cuktech.com products',()=>{
- const reload=main.slice(main.indexOf('const reload=async()=>{'),main.indexOf(' useEffect(()=>{Promise.allSettled([reload()'))
- assert.match(reload,/catalog\.snapshot\.json/)
+ const reload=main.slice(main.indexOf('const reload=async()=>{'),main.indexOf(' useEffect(()=>{',main.indexOf('const reload=async()=>{')))
+ assert.match(reload,/loadStaticCatalog\(\)/)
+ assert.match(reload,/setProducts\(staticProducts\)/)
+ assert.doesNotMatch(reload,/api\('/)
  assert.doesNotMatch(reload,/catalog\.china\.json/)
- assert.match(reload,/setProducts\(source\.products\.map/)
  assert.doesNotMatch(reload,/FALLBACK_PRODUCTS/)
  const catalog=main.slice(main.indexOf('function Catalog(){'),main.indexOf('function DetailPhoto('))
  assert.match(catalog,/Danh mục chính thức từ/)
